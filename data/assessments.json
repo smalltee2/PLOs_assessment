@@ -1,1 +1,22 @@
-
+[
+  {
+    "id": 1,
+    "slide_name": "Presentation4.pdf",
+    "course": "282711 - ระบบสิ่งแวดล้อมและการเปลี่ยนแปลงสภาพภูมิอากาศ",
+    "course_type": "บังคับ",
+    "date": "2025-06-09 19:58:06",
+    "scores": {
+      "PLO1": 50,
+      "PLO2": 50,
+      "PLO3": 50
+    },
+    "comments": {
+      "PLO1": "",
+      "PLO2": "",
+      "PLO3": ""
+    },
+    "overall_score": 50.0,
+    "status": "ต้องปรับปรุง",
+    "ai_analyzed": false
+  }
+]
