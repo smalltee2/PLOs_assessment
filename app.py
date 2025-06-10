@@ -1101,8 +1101,8 @@ def create_enhanced_gauge_chart(score, title="Score", confidence=None):
                 {'range': [0, 50], 'color': "#ffebee"},
                 {'range': [50, 60], 'color': "#fff3e0"},
                 {'range': [60, 70], 'color': "#fffde7"},
-                {'range': [70, 85], 'color': "#e8f5e8"},
-                {'range': [85, 100], 'color': "#e3f2fd"}
+                {'range': [70, 80], 'color': "#e8f5e8"},
+                {'range': [80, 100], 'color': "#e3f2fd"}
             ],
             'threshold': {
                 'line': {'color': "red", 'width': 4},
@@ -1158,7 +1158,7 @@ def display_enhanced_clo_analysis(clo_results):
             st.plotly_chart(fig, use_container_width=True)
             
             # Status indicator
-            if score >= 85:
+            if score >= 80:
                 st.success(f"🌟 Excellent ({score:.1f}%)")
             elif score >= 70:
                 st.success(f"✅ Good ({score:.1f}%)")
@@ -1236,7 +1236,7 @@ def display_plo_analysis(plo_results):
             st.plotly_chart(fig, use_container_width=True)
             
             # Status indicator  
-            if score >= 85:
+            if score >= 80:
                 st.success(f"🌟 Excellent ({score:.1f}%)")
             elif score >= 70:
                 st.success(f"✅ Good ({score:.1f}%)")
@@ -1294,7 +1294,7 @@ def display_ylo_analysis(ylo_results):
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Status indicator
-                if score >= 85:
+                if score >= 80:
                     st.success(f"🌟 Excellent ({score:.1f}%)")
                 elif score >= 70:
                     st.success(f"✅ Good ({score:.1f}%)")
@@ -1320,7 +1320,7 @@ def display_ylo_analysis(ylo_results):
                 st.plotly_chart(fig, use_container_width=True)
                 
                 # Status indicator
-                if score >= 85:
+                if score >= 80:
                     st.success(f"🌟 Excellent ({score:.1f}%)")
                 elif score >= 70:
                     st.success(f"✅ Good ({score:.1f}%)")
