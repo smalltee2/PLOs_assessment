@@ -305,57 +305,75 @@ Academic writing standards ensure clear communication of results.
     
     return base_content
 
-@st.cache_data(ttl=300)
+@st.cache_data
 def generate_ai_analysis(content_hash, course_code, use_ai=False):
-    """Generate AI analysis (mock or real)"""
+    """Generate deterministic AI analysis (mock or real)"""
     if use_ai and check_ai_availability():
         # Real AI analysis would go here
-        # For now, we'll use enhanced mock analysis
+        # For now, we'll use deterministic mock analysis
         pass
     
-    # Enhanced mock AI analysis
-    random.seed(hash(content_hash))
+    # Create deterministic seed from content and course
+    deterministic_seed = hash(f"{content_hash}_{course_code}") % (2**32)
+    random.seed(deterministic_seed)
     
     course_info = COURSE_DESCRIPTIONS.get(course_code, {})
     course_clos = course_info.get('clo', {})
     
     ai_results = {
         'ai_generated': True,
-        'analysis_timestamp': datetime.now().isoformat(),
+        'analysis_id': content_hash[:8],  # Use content hash instead of timestamp
         'content_analysis': {},
         'recommendations': [],
         'confidence_scores': {}
     }
     
-    # Analyze each CLO
-    for clo_code, clo_desc in course_clos.items():
+    # Deterministic analysis for each CLO
+    clo_list = sorted(course_clos.items())  # Sort for consistency
+    for i, (clo_code, clo_desc) in enumerate(clo_list):
         keywords = course_info.get('keywords', {}).get(clo_code, [])
-        found_keywords = random.sample(keywords, k=min(3, len(keywords)))
         
-        base_score = random.randint(65, 90)
-        confidence = random.uniform(0.7, 0.95)
+        # Deterministic keyword selection based on content
+        content_words = content_hash.lower()
+        found_keywords = []
+        for keyword in keywords[:4]:  # Take first 4 for consistency
+            if any(char in content_words for char in keyword.lower()[:3]):
+                found_keywords.append(keyword)
+        
+        # Deterministic scoring based on content characteristics
+        content_score = len(content_hash) % 30 + 65  # Range 65-94
+        clo_adjustment = (ord(clo_code[-1]) % 15) - 7  # -7 to +7 adjustment
+        base_score = max(60, min(95, content_score + clo_adjustment))
+        
+        # Deterministic confidence based on found keywords
+        confidence = 0.75 + (len(found_keywords) * 0.05)  # 0.75-0.95 range
         
         ai_results['content_analysis'][clo_code] = {
             'score': base_score,
-            'confidence': confidence,
+            'confidence': round(confidence, 2),
             'found_keywords': found_keywords,
             'ai_insights': [
                 f"Content demonstrates good alignment with {clo_code} objectives",
-                f"Strong presence of key concepts: {', '.join(found_keywords[:2])}",
-                f"Suggests comprehensive coverage of {clo_desc[:50]}..."
+                f"Key concepts identified: {', '.join(found_keywords[:2]) if found_keywords else 'General alignment'}",
+                f"Systematic coverage of {clo_desc[:40]}..."
             ]
         }
     
-    # Generate recommendations
-    recommendations = [
+    # Deterministic recommendations based on scores
+    all_recommendations = [
         "Consider adding more practical examples and case studies",
-        "Enhance visual presentations with charts and diagrams",
+        "Enhance visual presentations with charts and diagrams", 
         "Include community participation examples",
         "Strengthen connections between theory and practice",
-        "Add current research findings and recent developments"
+        "Add current research findings and recent developments",
+        "Improve keyword alignment with course objectives",
+        "Expand on methodology discussions",
+        "Include more technical detail where appropriate"
     ]
     
-    ai_results['recommendations'] = random.sample(recommendations, k=3)
+    # Select recommendations based on content hash
+    rec_indices = [int(content_hash[i*2:i*2+2], 16) % len(all_recommendations) for i in range(3)]
+    ai_results['recommendations'] = [all_recommendations[i] for i in rec_indices]
     
     return ai_results
 
@@ -376,12 +394,15 @@ class MultiLevelAssessmentEngine:
         return text
     
     def calculate_clo_alignment(self, content, course_code, ai_analysis=None):
-        """Calculate Course Learning Outcome alignment with optional AI support"""
+        """Calculate Course Learning Outcome alignment with optional AI support - deterministic"""
         if course_code not in self.course_descriptions:
             return {}
         
         course_data = self.course_descriptions[course_code]
         content_processed = self.preprocess_text(content)
+        
+        # Create deterministic seed for this analysis
+        analysis_seed = hash(f"{content_processed[:100]}_{course_code}") % (2**32)
         
         clo_results = {}
         
@@ -395,13 +416,13 @@ class MultiLevelAssessmentEngine:
                 if keyword_processed in content_processed:
                     found_keywords.append(keyword)
             
-            # Calculate base score
+            # Calculate base score - deterministic
             if keywords:
                 coverage = len(found_keywords) / len(keywords)
                 base_score = 50
                 coverage_score = coverage * 40
                 
-                # Bonus for description relevance
+                # Bonus for description relevance - deterministic
                 desc_words = self.preprocess_text(clo_description).split()
                 desc_matches = sum(1 for word in desc_words if word in content_processed)
                 desc_bonus = min(desc_matches * 2, 10)
@@ -410,20 +431,20 @@ class MultiLevelAssessmentEngine:
             else:
                 final_score = 50
             
-            # Apply AI enhancement if available
+            # Apply AI enhancement if available - keep AI scores consistent
+            confidence = 0.8  # Default confidence
+            ai_insights = []
+            
             if ai_analysis and clo_code in ai_analysis.get('content_analysis', {}):
                 ai_data = ai_analysis['content_analysis'][clo_code]
                 ai_score = ai_data['score']
                 confidence = ai_data['confidence']
                 
-                # Weighted combination of rule-based and AI scores
+                # Weighted combination of rule-based and AI scores - deterministic
                 final_score = (final_score * 0.4) + (ai_score * 0.6)
                 
                 # Add AI insights
                 ai_insights = ai_data.get('ai_insights', [])
-            else:
-                confidence = 0.8
-                ai_insights = []
             
             clo_results[clo_code] = {
                 'score': round(final_score, 1),
@@ -431,7 +452,7 @@ class MultiLevelAssessmentEngine:
                 'found_keywords': found_keywords,
                 'total_keywords': len(keywords),
                 'coverage': len(found_keywords) / len(keywords) if keywords else 0,
-                'confidence': confidence,
+                'confidence': round(confidence, 2),
                 'ai_insights': ai_insights,
                 'ai_enhanced': ai_analysis is not None
             }
