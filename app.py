@@ -545,16 +545,56 @@ class MultiLevelAssessmentEngine:
         clo_results = self.calculate_clo_alignment(content, course_code, ai_analysis)
         results['clo_results'] = clo_results
         
-        # 2. PLO Analysis (mapped from CLOs)
+        # 2. PLO Analysis (mapped from CLOs) - Fixed calculation
         if course_code in self.course_descriptions:
             course_data = self.course_descriptions[course_code]
             mapped_plos = course_data.get('plo_mapping', [])
             
             for plo_code in mapped_plos:
-                # Calculate PLO score based on CLO scores
-                related_clos = [clo for clo in clo_results.keys()]
+                # Find CLOs that specifically contribute to this PLO
+                # Based on course content and CLO descriptions
+                related_clos = []
+                
+                # Map CLOs to PLOs based on course design
+                if plo_code == 'PLO1':  # Technology and Participation
+                    # CLOs that involve technology, tools, sustainability
+                    related_clos = [clo for clo in clo_results.keys() 
+                                   if any(keyword in ['เทคโนโลยี', 'technology', 'GIS', 'ระบบ', 'ยั่งยืน', 'sustainable'] 
+                                         for keyword in course_data.get('keywords', {}).get(clo, []))]
+                elif plo_code == 'PLO2':  # Research and Integration  
+                    # CLOs that involve research, methodology, analysis
+                    related_clos = [clo for clo in clo_results.keys()
+                                   if any(keyword in ['วิจัย', 'research', 'วิธีการ', 'methodology', 'วิเคราะห์', 'analysis', 'บูรณาการ', 'integrate']
+                                         for keyword in course_data.get('keywords', {}).get(clo, []))]
+                elif plo_code == 'PLO3':  # Communication and Transfer
+                    # CLOs that involve communication, presentation, writing
+                    related_clos = [clo for clo in clo_results.keys()
+                                   if any(keyword in ['สื่อสาร', 'communicate', 'นำเสนอ', 'present', 'เขียน', 'writing', 'รายงาน', 'report']
+                                         for keyword in course_data.get('keywords', {}).get(clo, []))]
+                
+                # Fallback: if no specific mapping found, use all CLOs but with weights
+                if not related_clos:
+                    related_clos = list(clo_results.keys())
+                
+                # Calculate PLO score based on related CLOs only
                 if related_clos:
-                    plo_score = sum(clo_results[clo]['score'] for clo in related_clos) / len(related_clos)
+                    # Weight CLOs based on relevance to PLO
+                    weighted_scores = []
+                    for clo in related_clos:
+                        weight = 1.0  # Default weight
+                        
+                        # Adjust weight based on CLO-PLO relevance
+                        clo_keywords = course_data.get('keywords', {}).get(clo, [])
+                        if plo_code == 'PLO1' and any(kw in ['เทคโนโลยี', 'technology', 'GIS'] for kw in clo_keywords):
+                            weight = 1.2
+                        elif plo_code == 'PLO2' and any(kw in ['วิจัย', 'research', 'วิเคราะห์'] for kw in clo_keywords):
+                            weight = 1.2  
+                        elif plo_code == 'PLO3' and any(kw in ['สื่อสาร', 'communicate', 'นำเสนอ'] for kw in clo_keywords):
+                            weight = 1.2
+                        
+                        weighted_scores.append(clo_results[clo]['score'] * weight)
+                    
+                    plo_score = sum(weighted_scores) / len(weighted_scores)
                     avg_confidence = sum(clo_results[clo]['confidence'] for clo in related_clos) / len(related_clos)
                 else:
                     plo_score = 0
@@ -593,18 +633,61 @@ class MultiLevelAssessmentEngine:
                     'description': ylo_data['description'],
                     'level': ylo_data['level'],
                     'cognitive_level': ylo_data['cognitive_level'],
-                    'confidence': avg_confidence
+                    'confidence': round(avg_confidence, 3),
+                    'cognitive_multiplier': cognitive_multiplier
                 }
         
         # 4. Create alignment matrix
         results['alignment_matrix'] = self.create_alignment_matrix(results)
         
-        # 5. Calculate overall scores
+        # 5. Calculate overall scores - Fixed to show different values
+        # CLO Average - direct average of all CLO scores
+        clo_average = sum(clo['score'] for clo in clo_results.values()) / len(clo_results) if clo_results else 0
+        
+        # PLO Average - weighted by PLO importance in the program
+        if results['plo_results']:
+            plo_weighted_sum = 0
+            total_weight = 0
+            for plo_code, plo_data in results['plo_results'].items():
+                weight = self.plos[plo_code]['weight'] / 100  # Convert percentage to decimal
+                plo_weighted_sum += plo_data['score'] * weight
+                total_weight += weight
+            plo_average = plo_weighted_sum / total_weight if total_weight > 0 else 0
+        else:
+            plo_average = 0
+        
+        # YLO Average - consider cognitive complexity
+        if results['ylo_results']:
+            ylo_weighted_sum = 0
+            total_cognitive_weight = 0
+            for ylo_code, ylo_data in results['ylo_results'].items():
+                # Weight by cognitive level complexity
+                cognitive_weights = {
+                    'Understanding': 1.0,
+                    'Applying': 1.1, 
+                    'Evaluating': 1.2,
+                    'Creating': 1.3
+                }
+                weight = cognitive_weights.get(ylo_data['cognitive_level'], 1.0)
+                ylo_weighted_sum += ylo_data['score'] * weight
+                total_cognitive_weight += weight
+            ylo_average = ylo_weighted_sum / total_cognitive_weight if total_cognitive_weight > 0 else 0
+        else:
+            ylo_average = 0
+        
+        # Overall confidence
+        overall_confidence = sum(clo['confidence'] for clo in clo_results.values()) / len(clo_results) if clo_results else 0
+        
         results['overall_scores'] = {
-            'clo_average': sum(clo['score'] for clo in clo_results.values()) / len(clo_results) if clo_results else 0,
-            'plo_average': sum(plo['score'] for plo in results['plo_results'].values()) / len(results['plo_results']) if results['plo_results'] else 0,
-            'ylo_average': sum(ylo['score'] for ylo in results['ylo_results'].values()) / len(results['ylo_results']) if results['ylo_results'] else 0,
-            'overall_confidence': sum(clo['confidence'] for clo in clo_results.values()) / len(clo_results) if clo_results else 0
+            'clo_average': round(clo_average, 1),
+            'plo_average': round(plo_average, 1), 
+            'ylo_average': round(ylo_average, 1),
+            'overall_confidence': round(overall_confidence, 3),
+            'calculation_method': {
+                'clo': 'Simple average of all CLO scores',
+                'plo': 'Weighted average by PLO importance (35%, 35%, 30%)',
+                'ylo': 'Weighted average by cognitive complexity'
+            }
         }
         
         return results
@@ -784,7 +867,7 @@ def create_multi_level_dashboard(results):
         )
         st.plotly_chart(fig_ylo, use_container_width=True)
     
-    # Overall Status
+    # Overall Status with calculation explanation
     overall_avg = (results['overall_scores']['clo_average'] + 
                    results['overall_scores']['plo_average'] + 
                    results['overall_scores']['ylo_average']) / 3
@@ -798,6 +881,41 @@ def create_multi_level_dashboard(results):
         st.warning(f"⚠️ **Overall Performance: Fair** ({overall_avg:.1f}%)")
     else:
         st.error(f"❌ **Overall Performance: Needs Improvement** ({overall_avg:.1f}%)")
+    
+    # Calculation Method Explanation
+    with st.expander("📊 วิธีการคำนวณคะแนนแต่ละระดับ"):
+        calc_methods = results['overall_scores'].get('calculation_method', {})
+        st.markdown("**CLO (Course Learning Outcomes):**")
+        st.write(f"• {calc_methods.get('clo', 'การเฉลี่ยแบบธรรมดาของคะแนน CLO ทั้งหมด')}")
+        
+        st.markdown("**PLO (Program Learning Outcomes):**") 
+        st.write(f"• {calc_methods.get('plo', 'การเฉลี่ยถ่วงน้ำหนักตามความสำคัญของ PLO')}")
+        st.write("• น้ำหนัก: PLO1 (35%), PLO2 (35%), PLO3 (30%)")
+        
+        st.markdown("**YLO (Year Learning Outcomes):**")
+        st.write(f"• {calc_methods.get('ylo', 'การเฉลี่ยถ่วงน้ำหนักตามความซับซ้อนทางความคิด')}")
+        st.write("• น้ำหนักตามระดับความคิด: Understanding (1.0), Applying (1.1), Evaluating (1.2), Creating (1.3)")
+        
+        # Show specific calculations for this assessment
+        st.markdown("**การคำนวณเฉพาะการประเมินนี้:**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.write("**CLO Scores:**")
+            for clo, data in results['clo_results'].items():
+                st.write(f"• {clo}: {data['score']:.1f}%")
+        
+        with col2:
+            st.write("**PLO Mapping:**")
+            for plo, data in results['plo_results'].items():
+                related = ', '.join(data['related_clos'])
+                st.write(f"• {plo}: CLO {related}")
+        
+        with col3:
+            st.write("**YLO Cognitive Levels:**")
+            for ylo, data in results['ylo_results'].items():
+                multiplier = data.get('cognitive_multiplier', 1.0)
+                st.write(f"• {ylo}: {data['cognitive_level']} (×{multiplier})")
     
     # AI Recommendations (if available)
     if results.get('ai_recommendations'):
@@ -1230,11 +1348,64 @@ def main():
     # Display course information
     course_info = COURSE_DESCRIPTIONS[st.session_state.selected_course_code]
     
-    with st.expander("📖 Course Information"):
-        st.write(f"**Description:** {course_info['description']}")
-        st.write(f"**CLOs:** {len(course_info['clo'])}")
-        st.write(f"**Mapped PLOs:** {', '.join(course_info['plo_mapping'])}")
-        st.write(f"**Mapped YLOs:** {', '.join(course_info['ylo_mapping'])}")
+    with st.expander("📖 ข้อมูลรายวิชา"):
+        st.write(f"**คำอธิบายรายวิชา:** {course_info['description']}")
+        st.write(f"**จำนวน CLOs:** {len(course_info['clo'])}")
+        st.write(f"**PLOs ที่เกี่ยวข้อง:** {', '.join(course_info['plo_mapping'])}")
+        st.write(f"**YLOs ที่เกี่ยวข้อง:** {', '.join(course_info['ylo_mapping'])}")
+    
+    # Program Overview Section
+    st.markdown("---")
+    with st.expander("🎯 ข้อมูลทั่วไปของหลักสูตร"):
+        st.markdown(f"### {PROGRAM_OVERVIEW['program_name']}")
+        
+        st.markdown("#### ปรัชญาของหลักสูตร")
+        st.write(PROGRAM_OVERVIEW['program_philosophy'])
+        
+        st.markdown("#### วัตถุประสงค์ของหลักสูตร")
+        for i, obj in enumerate(PROGRAM_OVERVIEW['program_objectives'], 1):
+            st.write(f"{i}. {obj}")
+        
+        st.markdown("#### แนวทางการประกอบอาชีพ")
+        for career in PROGRAM_OVERVIEW['career_prospects']:
+            st.write(f"• {career}")
+    
+    # Enhanced PLO Information
+    st.markdown("---")
+    with st.expander("🎯 ผลการเรียนรู้ที่คาดหวังของหลักสูตร (PLOs) - รายละเอียด"):
+        for plo_code, plo_data in ENHANCED_PLOS.items():
+            st.markdown(f"#### {plo_code}: {plo_data['title']} (น้ำหนัก {plo_data['weight']}%)")
+            st.write(f"**คำอธิบายโดยย่อ:** {plo_data['description']}")
+            st.write(f"**คำอธิบายโดยละเอียด:** {plo_data['detailed_description']}")
+            st.write(f"**จุดเน้น:** {', '.join(plo_data['focus_areas'])}")
+            st.markdown("---")
+    
+    # Enhanced YLO Information  
+    with st.expander("📈 ผลการเรียนรู้ตามระดับชั้นปี (YLOs) - รายละเอียด"):
+        # Group by year
+        year1_ylos = {k: v for k, v in YLO_STRUCTURE.items() if v['level'] == 'Year 1'}
+        year2_ylos = {k: v for k, v in YLO_STRUCTURE.items() if v['level'] == 'Year 2'}
+        
+        st.markdown("#### ชั้นปีที่ 1")
+        for ylo_code, ylo_data in year1_ylos.items():
+            st.markdown(f"**{ylo_code}** ({ylo_data['cognitive_level']})")
+            st.write(f"• {ylo_data['description']}")
+            st.write(f"• เชื่อมโยงกับ PLO: {', '.join(ylo_data['plo_mapping'])}")
+            st.write(f"• วิธีการประเมิน: {', '.join(ylo_data.get('assessment_methods', ['ไม่ระบุ']))}")
+        
+        st.markdown("#### ชั้นปีที่ 2")
+        for ylo_code, ylo_data in year2_ylos.items():
+            st.markdown(f"**{ylo_code}** ({ylo_data['cognitive_level']})")
+            st.write(f"• {ylo_data['description']}")
+            st.write(f"• เชื่อมโยงกับ PLO: {', '.join(ylo_data['plo_mapping'])}")
+            st.write(f"• วิธีการประเมิน: {', '.join(ylo_data.get('assessment_methods', ['ไม่ระบุ']))}")
+    
+    # Cognitive Framework
+    with st.expander("🧠 กรอบการพัฒนาความคิด (Cognitive Development Framework)"):
+        for level, data in COGNITIVE_FRAMEWORK.items():
+            st.markdown(f"**{level}:** {data['description']}")
+            st.write(f"ตัวอย่างคำกริยา: {', '.join(data['examples'])}")
+            st.write("")
     
     # Input Method Selection
     st.subheader("📝 Choose Input Method")
@@ -1347,7 +1518,7 @@ def main():
                 st.caption(f"Total length: {len(content):,} characters")
 
 def generate_improvement_recommendations(results):
-    """Generate specific improvement recommendations"""
+    """Generate specific improvement recommendations in Thai"""
     recommendations = []
     
     # CLO-based recommendations
@@ -1356,6 +1527,8 @@ def generate_improvement_recommendations(results):
         avg_clo = sum(clo_scores) / len(clo_scores)
         if avg_clo < 70:
             recommendations.append("ปรับปรุงเนื้อหาให้สอดคล้องกับวัตถุประสงค์รายวิชา (CLO) มากขึ้น")
+        elif avg_clo < 80:
+            recommendations.append("เสริมเนื้อหาเพื่อยกระดับความสอดคล้องกับ CLO ให้ถึงระดับดีเยี่ยม")
     
     # PLO-based recommendations
     plo_scores = [data['score'] for data in results['plo_results'].values()]
@@ -1363,6 +1536,8 @@ def generate_improvement_recommendations(results):
         avg_plo = sum(plo_scores) / len(plo_scores)
         if avg_plo < 70:
             recommendations.append("เสริมเนื้อหาให้เชื่อมโยงกับผลการเรียนรู้ของหลักสูตร (PLO) ให้ชัดเจนขึ้น")
+        elif avg_plo < 85:
+            recommendations.append("พัฒนาการเชื่อมโยงระหว่างเนื้อหาและ PLO ให้แข็งแกร่งขึ้น")
     
     # YLO-based recommendations
     ylo_scores = [data['score'] for data in results['ylo_results'].values()]
@@ -1370,22 +1545,42 @@ def generate_improvement_recommendations(results):
         avg_ylo = sum(ylo_scores) / len(ylo_scores)
         if avg_ylo < 70:
             recommendations.append("ปรับระดับเนื้อหาให้เหมาะสมกับผลการเรียนรู้ระดับชั้นปี (YLO)")
+        elif avg_ylo < 85:
+            recommendations.append("ยกระดับความซับซ้อนของเนื้อหาให้สอดคล้องกับระดับการคิดขั้นสูง")
     
     # Specific content recommendations
     low_clos = [clo for clo, data in results['clo_results'].items() if data['score'] < 70]
     if low_clos:
-        recommendations.append(f"เพิ่มเนื้อหาที่เกี่ยวข้องกับ {', '.join(low_clos)}")
+        recommendations.append(f"เพิ่มเนื้อหาและกิจกรรมที่เกี่ยวข้องกับ {', '.join(low_clos)}")
     
     # AI-specific recommendations
     if results.get('ai_enhanced'):
-        low_confidence_clos = [clo for clo, data in results['clo_results'].items() if data.get('confidence', 1) < 0.7]
+        low_confidence_clos = [clo for clo, data in results['clo_results'].items() if data.get('confidence', 1) < 0.8]
         if low_confidence_clos:
-            recommendations.append(f"ปรับปรุงความชัดเจนของเนื้อหาใน {', '.join(low_confidence_clos)} (AI confidence ต่ำ)")
+            recommendations.append(f"ปรับปรุงความชัดเจนและความลึกของเนื้อหาใน {', '.join(low_confidence_clos)}")
+        
+        # High-level AI recommendations
+        overall_confidence = results['overall_scores'].get('overall_confidence', 0)
+        if overall_confidence > 0.95:
+            recommendations.append("เนื้อหามีคุณภาพสูงมาก แนะนำให้พัฒนาเป็นต้นแบบหรือกรณีศึกษา")
+        elif overall_confidence > 0.90:
+            recommendations.append("เนื้อหาอยู่ในระดับดี แนะนำให้เพิ่มความลึกและการประยุกต์ใช้จริง")
     
+    # Course-specific recommendations
+    course_code = results.get('course_code', '')
+    if '282712' in course_code:  # Water resource course
+        recommendations.append("เพิ่มกรณีศึกษาการจัดการน้ำในบริบทไทยและอาเซียน")
+    elif '282714' in course_code:  # Research methodology
+        recommendations.append("เสริมเทคนิคการวิจัยสมัยใหม่และการใช้เครื่องมือดิจิทัล")
+    elif '282734' in course_code:  # Communication
+        recommendations.append("พัฒนาทักษะการสื่อสารแบบสื่อผสมและแพลตฟอร์มดิจิทัล")
+    
+    # General enhancement recommendations
     if not recommendations:
-        recommendations.append("เนื้อหามีความสอดคล้องในระดับดี ควรรักษาคุณภาพและพัฒนาต่อไป")
+        recommendations.append("เนื้อหามีความสอดคล้องในระดับดีมาก ควรรักษาคุณภาพและนำไปเป็นแบบอย่าง")
+        recommendations.append("พิจารณาการพัฒนาเป็นเนื้อหาขั้นสูงหรือการวิจัยเชิงลึก")
     
-    return recommendations
+    return recommendations[:6]  # Limit to top 6 recommendations
 
 if __name__ == "__main__":
     main()
