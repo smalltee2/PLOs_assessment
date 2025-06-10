@@ -3,8 +3,6 @@ import pandas as pd
 import json
 import plotly.express as px
 import plotly.graph_objects as go
-import networkx as nx
-import matplotlib.pyplot as plt
 from datetime import datetime
 import re
 from collections import defaultdict
@@ -92,6 +90,39 @@ COURSE_DESCRIPTIONS = {
         },
         'plo_mapping': ['PLO1', 'PLO2'],
         'ylo_mapping': ['YLO1.1', 'YLO2.1']
+    },
+    # เพิ่มรายวิชาเลือก
+    '282721': {
+        'name': 'การประเมินความเสี่ยงทางภูมิอากาศและผลกระทบทางสิ่งแวดล้อม',
+        'description': 'หลักการประเมินความเสี่ยงและผลกระทบสิ่งแวดล้อม วิธีการประเมินความเสี่ยงทางภูมิอากาศ การสร้างแบบจำลองต้นแบบ การประเมินผลกระทบ',
+        'clo': {
+            'CLO1': 'ประเมินความเสี่ยงทางภูมิอากาศได้',
+            'CLO2': 'สร้างแบบจำลองการประเมินผลกระทบได้',
+            'CLO3': 'วิเคราะห์ความเชื่อมโยงระหว่างความเสี่ยงและผลกระทบได้'
+        },
+        'keywords': {
+            'CLO1': ['ความเสี่ยง', 'ประเมิน', 'ภูมิอากาศ', 'risk', 'assessment', 'climate'],
+            'CLO2': ['แบบจำลอง', 'ผลกระทบ', 'model', 'impact', 'simulation'],
+            'CLO3': ['ความเชื่อมโยง', 'วิเคราะห์', 'linkage', 'analysis', 'correlation']
+        },
+        'plo_mapping': ['PLO1', 'PLO2'],
+        'ylo_mapping': ['YLO2.1', 'YLO2.2']
+    },
+    '282734': {
+        'name': 'การสื่อสารประเด็นสาธารณะสิ่งแวดล้อมและการเปลี่ยนแปลงสภาพภูมิอากาศ',
+        'description': 'การพัฒนากระบวนการสื่อสาร การสื่อสารเชิงยุทธศาสตร์ การให้และรับข้อมูลกับสาธารณะ การสื่อสารในกระบวนการมีส่วนร่วม',
+        'clo': {
+            'CLO1': 'พัฒนากระบวนการสื่อสารที่มีประสิทธิภาพได้',
+            'CLO2': 'สื่อสารข้อมูลเชิงเทคนิคกับสาธารณะได้',
+            'CLO3': 'ออกแบบสื่อเพื่อการมีส่วนร่วมของประชาชนได้'
+        },
+        'keywords': {
+            'CLO1': ['สื่อสาร', 'กระบวนการ', 'ประสิทธิภาพ', 'communication', 'process', 'effective'],
+            'CLO2': ['ข้อมูล', 'เทคนิค', 'สาธารณะ', 'information', 'technical', 'public'],
+            'CLO3': ['สื่อ', 'มีส่วนร่วม', 'ประชาชน', 'media', 'participation', 'citizen']
+        },
+        'plo_mapping': ['PLO3'],
+        'ylo_mapping': ['YLO1.4', 'YLO2.3']
     }
 }
 
