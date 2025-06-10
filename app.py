@@ -1019,7 +1019,7 @@ def create_multi_level_dashboard(results):
                    results['overall_scores']['plo_average'] + 
                    results['overall_scores']['ylo_average']) / 3
     
-    if overall_avg >= 85:
+    if overall_avg >= 80:
         st.success(f"🌟 **Overall Performance: Excellent** ({overall_avg:.1f}%)")
         st.balloons()
     elif overall_avg >= 70:
