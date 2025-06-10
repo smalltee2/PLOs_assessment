@@ -627,6 +627,15 @@ class MultiLevelAssessmentEngine:
                 ylo_score = sum(ylo_scores) / len(ylo_scores) if ylo_scores else 0
                 avg_confidence = sum(confidences) / len(confidences) if confidences else 0
                 
+                # Calculate cognitive multiplier based on cognitive level
+                cognitive_weights = {
+                    'Understanding': 1.0,
+                    'Applying': 1.1,
+                    'Evaluating': 1.2,
+                    'Creating': 1.3
+                }
+                cognitive_multiplier = cognitive_weights.get(ylo_data['cognitive_level'], 1.0)
+                
                 results['ylo_results'][ylo_code] = {
                     'score': round(ylo_score, 1),
                     'related_plos': related_plos,
