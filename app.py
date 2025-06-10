@@ -646,7 +646,7 @@ def show_file_upload_interface():
     return None, None
 
 def create_multi_level_dashboard(results):
-    """Create comprehensive multi-level dashboard with AI insights"""
+    """Create comprehensive multi-level dashboard with AI insights and gauge charts"""
     st.header("🎯 Multi-Level Learning Outcome Assessment")
     
     # Course Information with AI status
@@ -662,23 +662,53 @@ def create_multi_level_dashboard(results):
         else:
             st.info("📊 Rule-based")
     
-    # Overall Scores Summary
+    # Overall Scores with Gauge Charts
+    st.subheader("📊 Overall Performance Dashboard")
+    
     col1, col2, col3 = st.columns(3)
     
     with col1:
         clo_avg = results['overall_scores']['clo_average']
-        st.metric("CLO Average", f"{clo_avg:.1f}%", 
-                 delta=f"{clo_avg-70:.1f}%" if clo_avg >= 70 else f"{clo_avg-70:.1f}%")
+        confidence = results['overall_scores'].get('overall_confidence', 0.8)
+        fig_clo = create_enhanced_gauge_chart(
+            clo_avg, 
+            "CLO Average",
+            confidence if results.get('ai_enhanced') else None
+        )
+        st.plotly_chart(fig_clo, use_container_width=True)
     
     with col2:
         plo_avg = results['overall_scores']['plo_average']
-        st.metric("PLO Average", f"{plo_avg:.1f}%",
-                 delta=f"{plo_avg-70:.1f}%" if plo_avg >= 70 else f"{plo_avg-70:.1f}%")
+        fig_plo = create_enhanced_gauge_chart(
+            plo_avg, 
+            "PLO Average",
+            confidence if results.get('ai_enhanced') else None
+        )
+        st.plotly_chart(fig_plo, use_container_width=True)
     
     with col3:
         ylo_avg = results['overall_scores']['ylo_average']
-        st.metric("YLO Average", f"{ylo_avg:.1f}%",
-                 delta=f"{ylo_avg-70:.1f}%" if ylo_avg >= 70 else f"{ylo_avg-70:.1f}%")
+        fig_ylo = create_enhanced_gauge_chart(
+            ylo_avg, 
+            "YLO Average",
+            confidence if results.get('ai_enhanced') else None
+        )
+        st.plotly_chart(fig_ylo, use_container_width=True)
+    
+    # Overall Status
+    overall_avg = (results['overall_scores']['clo_average'] + 
+                   results['overall_scores']['plo_average'] + 
+                   results['overall_scores']['ylo_average']) / 3
+    
+    if overall_avg >= 85:
+        st.success(f"🌟 **Overall Performance: Excellent** ({overall_avg:.1f}%)")
+        st.balloons()
+    elif overall_avg >= 70:
+        st.success(f"✅ **Overall Performance: Good** ({overall_avg:.1f}%)")
+    elif overall_avg >= 60:
+        st.warning(f"⚠️ **Overall Performance: Fair** ({overall_avg:.1f}%)")
+    else:
+        st.error(f"❌ **Overall Performance: Needs Improvement** ({overall_avg:.1f}%)")
     
     # AI Recommendations (if available)
     if results.get('ai_recommendations'):
@@ -702,29 +732,87 @@ def create_multi_level_dashboard(results):
     with tab4:
         display_alignment_matrix(results)
 
+def create_enhanced_gauge_chart(score, title="Score", confidence=None):
+    """Create enhanced gauge chart with confidence indicator"""
+    fig = go.Figure(go.Indicator(
+        mode="gauge+number+delta",
+        value=score,
+        domain={'x': [0, 1], 'y': [0, 1]},
+        title={'text': title, 'font': {'size': 18, 'color': '#333'}},
+        delta={'reference': 70, 'increasing': {'color': "green"}, 'decreasing': {'color': "red"}},
+        gauge={
+            'axis': {'range': [None, 100], 'tickwidth': 2, 'tickcolor': "#333"},
+            'bar': {'color': "#667eea", 'thickness': 0.25},
+            'steps': [
+                {'range': [0, 50], 'color': "#ffebee"},
+                {'range': [50, 60], 'color': "#fff3e0"},
+                {'range': [60, 70], 'color': "#fffde7"},
+                {'range': [70, 85], 'color': "#e8f5e8"},
+                {'range': [85, 100], 'color': "#e3f2fd"}
+            ],
+            'threshold': {
+                'line': {'color': "red", 'width': 4},
+                'thickness': 0.75,
+                'value': 70
+            }
+        }
+    ))
+    
+    # Add confidence indicator if available
+    annotations = ["Pass: 70% | Good: 85%"]
+    if confidence:
+        annotations.append(f"AI Confidence: {confidence*100:.0f}%")
+    
+    fig.add_annotation(
+        x=0.5, y=0.1,
+        text=" | ".join(annotations),
+        showarrow=False,
+        font=dict(size=10, color="#666")
+    )
+    
+    fig.update_layout(
+        height=300, 
+        margin=dict(t=60, b=40, l=20, r=20),
+        font={'family': 'Arial, sans-serif'}
+    )
+    return fig
+
 def display_enhanced_clo_analysis(clo_results):
-    """Display enhanced CLO analysis with AI insights"""
+    """Display enhanced CLO analysis with AI insights using gauge charts"""
     st.subheader("📋 Course Learning Outcomes (CLO) Analysis")
     
     if not clo_results:
         st.warning("No CLO data available for this course")
         return
     
-    # CLO Scores Chart
-    clo_scores = {clo: data['score'] for clo, data in clo_results.items()}
-    confidences = {clo: data.get('confidence', 0.8) for clo, data in clo_results.items()}
+    # Display CLO Gauge Charts
+    clo_items = list(clo_results.items())
     
-    fig = px.bar(
-        x=list(clo_scores.keys()),
-        y=list(clo_scores.values()),
-        title="CLO Alignment Scores",
-        labels={'x': 'CLO', 'y': 'Score (%)'},
-        color=list(clo_scores.values()),
-        color_continuous_scale='RdYlGn'
-    )
-    fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Pass Threshold")
-    fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    # Create columns for gauge charts (max 3 per row)
+    for i in range(0, len(clo_items), 3):
+        cols = st.columns(3)
+        for j, (clo_code, clo_data) in enumerate(clo_items[i:i+3]):
+            with cols[j]:
+                score = clo_data['score']
+                confidence = clo_data.get('confidence', 0.8)
+                
+                # Create gauge chart
+                fig = create_enhanced_gauge_chart(
+                    score, 
+                    f"{clo_code} Alignment", 
+                    confidence if clo_data.get('ai_enhanced') else None
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Status indicator
+                if score >= 85:
+                    st.success(f"🌟 Excellent ({score:.1f}%)")
+                elif score >= 70:
+                    st.success(f"✅ Good ({score:.1f}%)")
+                elif score >= 60:
+                    st.warning(f"⚠️ Fair ({score:.1f}%)")
+                else:
+                    st.error(f"❌ Poor ({score:.1f}%)")
     
     # Detailed CLO Analysis with AI insights
     for clo_code, clo_data in clo_results.items():
@@ -769,27 +857,42 @@ def display_enhanced_clo_analysis(clo_results):
                     st.error("Needs Improvement")
 
 def display_plo_analysis(plo_results):
-    """Display Program Learning Outcome analysis"""
+    """Display Program Learning Outcome analysis with gauge charts"""
     st.subheader("🎯 Program Learning Outcomes (PLO) Analysis")
     
     if not plo_results:
         st.warning("No PLO mapping available for this course")
         return
     
-    # PLO Scores Chart
-    plo_scores = {plo: data['score'] for plo, data in plo_results.items()}
+    # Display PLO Gauge Charts
+    plo_items = list(plo_results.items())
     
-    fig = px.bar(
-        x=list(plo_scores.keys()),
-        y=list(plo_scores.values()),
-        title="PLO Alignment Scores",
-        labels={'x': 'PLO', 'y': 'Score (%)'},
-        color=list(plo_scores.values()),
-        color_continuous_scale='Viridis'
-    )
-    fig.add_hline(y=70, line_dash="dash", line_color="red", annotation_text="Pass Threshold")
-    fig.update_layout(height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    # Create columns for gauge charts
+    cols = st.columns(len(plo_items))
+    for i, (plo_code, plo_data) in enumerate(plo_items):
+        with cols[i]:
+            score = plo_data['score']
+            confidence = plo_data.get('confidence', 0.8)
+            
+            # Create gauge chart
+            fig = create_enhanced_gauge_chart(
+                score, 
+                f"{plo_code}\n{ENHANCED_PLOS[plo_code]['title'][:20]}...",
+                confidence
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Status indicator  
+            if score >= 85:
+                st.success(f"🌟 Excellent ({score:.1f}%)")
+            elif score >= 70:
+                st.success(f"✅ Good ({score:.1f}%)")
+            elif score >= 60:
+                st.warning(f"⚠️ Fair ({score:.1f}%)")
+            else:
+                st.error(f"❌ Poor ({score:.1f}%)")
+    
+    st.markdown("---")
     
     # Detailed PLO Analysis
     for plo_code, plo_data in plo_results.items():
@@ -807,47 +910,73 @@ def display_plo_analysis(plo_results):
                 st.metric("Confidence", f"{confidence*100:.0f}%")
 
 def display_ylo_analysis(ylo_results):
-    """Display Year Learning Outcome analysis"""
+    """Display Year Learning Outcome analysis with gauge charts"""
     st.subheader("📈 Year Learning Outcomes (YLO) Analysis")
     
     if not ylo_results:
         st.warning("No YLO mapping available for this course")
         return
     
-    # YLO by Year and Cognitive Level
-    ylo_df = []
-    for ylo_code, ylo_data in ylo_results.items():
-        ylo_df.append({
-            'YLO': ylo_code,
-            'Score': ylo_data['score'],
-            'Level': ylo_data['level'],
-            'Cognitive': ylo_data['cognitive_level'],
-            'Confidence': ylo_data.get('confidence', 0.8)
-        })
+    # Display YLO Gauge Charts
+    ylo_items = list(ylo_results.items())
     
-    ylo_df = pd.DataFrame(ylo_df)
+    # Group by Year Level
+    year1_ylos = [(code, data) for code, data in ylo_items if data['level'] == 'Year 1']
+    year2_ylos = [(code, data) for code, data in ylo_items if data['level'] == 'Year 2']
     
-    if not ylo_df.empty:
-        # Chart by Year Level
-        fig1 = px.bar(
-            ylo_df, x='YLO', y='Score', color='Level',
-            title="YLO Scores by Year Level",
-            labels={'Score': 'Score (%)'}
-        )
-        fig1.add_hline(y=70, line_dash="dash", line_color="red")
-        fig1.update_layout(height=400)
-        st.plotly_chart(fig1, use_container_width=True)
-        
-        # Chart by Cognitive Level with confidence
-        fig2 = px.scatter(
-            ylo_df, x='YLO', y='Score', color='Cognitive', 
-            size='Confidence', hover_data=['Level'],
-            title="YLO Scores by Cognitive Level (size = confidence)",
-            labels={'Score': 'Score (%)'}
-        )
-        fig2.add_hline(y=70, line_dash="dash", line_color="red")
-        fig2.update_layout(height=400)
-        st.plotly_chart(fig2, use_container_width=True)
+    if year1_ylos:
+        st.write("**Year 1 Learning Outcomes:**")
+        cols = st.columns(len(year1_ylos))
+        for i, (ylo_code, ylo_data) in enumerate(year1_ylos):
+            with cols[i]:
+                score = ylo_data['score']
+                confidence = ylo_data.get('confidence', 0.8)
+                
+                # Create gauge chart
+                fig = create_enhanced_gauge_chart(
+                    score, 
+                    f"{ylo_code}\n{ylo_data['cognitive_level']}",
+                    confidence
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Status indicator
+                if score >= 85:
+                    st.success(f"🌟 Excellent ({score:.1f}%)")
+                elif score >= 70:
+                    st.success(f"✅ Good ({score:.1f}%)")
+                elif score >= 60:
+                    st.warning(f"⚠️ Fair ({score:.1f}%)")
+                else:
+                    st.error(f"❌ Poor ({score:.1f}%)")
+    
+    if year2_ylos:
+        st.write("**Year 2 Learning Outcomes:**")
+        cols = st.columns(len(year2_ylos))
+        for i, (ylo_code, ylo_data) in enumerate(year2_ylos):
+            with cols[i]:
+                score = ylo_data['score']
+                confidence = ylo_data.get('confidence', 0.8)
+                
+                # Create gauge chart
+                fig = create_enhanced_gauge_chart(
+                    score, 
+                    f"{ylo_code}\n{ylo_data['cognitive_level']}",
+                    confidence
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Status indicator
+                if score >= 85:
+                    st.success(f"🌟 Excellent ({score:.1f}%)")
+                elif score >= 70:
+                    st.success(f"✅ Good ({score:.1f}%)")
+                elif score >= 60:
+                    st.warning(f"⚠️ Fair ({score:.1f}%)")
+                else:
+                    st.error(f"❌ Poor ({score:.1f}%)")
+    
+    st.markdown("---")
     
     # Detailed YLO Analysis
     for ylo_code, ylo_data in ylo_results.items():
