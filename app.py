@@ -1668,6 +1668,59 @@ def create_multi_level_dashboard(results):
         for i, rec in enumerate(results['ai_recommendations'], 1):
             st.write(f"{i}. {rec}")
         st.markdown("---")
+    
+    # Calculation Method Explanation
+    with st.expander("📊 วิธีการคำนวณคะแนนแต่ละระดับ"):
+        calc_methods = results['overall_scores'].get('calculation_method', {})
+        st.markdown("**CLO (Course Learning Outcomes):**")
+        st.write(f"• {calc_methods.get('clo', 'การเฉลี่ยแบบธรรมดาของคะแนน CLO ทั้งหมด')}")
+        
+        st.markdown("**PLO (Program Learning Outcomes):**") 
+        st.write(f"• {calc_methods.get('plo', 'การเฉลี่ยถ่วงน้ำหนักตามความสำคัญของ PLO')}")
+        st.write("• น้ำหนัก: PLO1 (35%), PLO2 (35%), PLO3 (30%)")
+        
+        st.markdown("**YLO (Year Learning Outcomes):**")
+        st.write(f"• {calc_methods.get('ylo', 'การเฉลี่ยถ่วงน้ำหนักตามความซับซ้อนทางความคิด')}")
+        st.write("• น้ำหนักตามระดับความคิด: Understanding (1.0), Applying (1.1), Evaluating (1.2), Creating (1.3)")
+        
+        # Show specific calculations for this assessment
+        st.markdown("**การคำนวณเฉพาะการประเมินนี้:**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.write("**CLO Scores:**")
+            for clo, data in results['clo_results'].items():
+                st.write(f"• {clo}: {data['score']:.1f}%")
+        
+        with col2:
+            st.write("**PLO Mapping:**")
+            for plo, data in results['plo_results'].items():
+                related = ', '.join(data['related_clos'])
+                st.write(f"• {plo}: CLO {related}")
+        
+        with col3:
+            st.write("**YLO Cognitive Levels:**")
+            for ylo, data in results['ylo_results'].items():
+                multiplier = data.get('cognitive_multiplier', 1.0)
+                st.write(f"• {ylo}: {data['cognitive_level']} (×{multiplier})")
+    
+    # Multi-level Analysis Tabs
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 CLO Analysis", "🎯 PLO Analysis", "📈 YLO Analysis", "🔗 Alignment Matrix", "📊 การแปลผลโดยรวม"])
+    
+    with tab1:
+        display_enhanced_clo_analysis(results['clo_results'])
+    
+    with tab2:
+        display_plo_analysis(results['plo_results'])
+    
+    with tab3:
+        display_ylo_analysis(results['ylo_results'])
+    
+    with tab4:
+        display_alignment_matrix(results)
+    
+    with tab5:
+        display_comprehensive_interpretation(results)
 
 def generate_improvement_recommendations(results):
     """Generate specific improvement recommendations in Thai"""
@@ -1742,6 +1795,346 @@ def generate_improvement_recommendations(results):
     
     return recommendations[:6]  # Limit to top 6 recommendations
 
+def display_clo_interpretation(clo_results):
+    """Display detailed interpretation of CLO analysis results"""
+    st.markdown("---")
+    st.subheader("📊 การแปลผลการวิเคราะห์ CLO")
+    
+    # Calculate average CLO score
+    clo_scores = [data['score'] for data in clo_results.values()]
+    avg_clo = sum(clo_scores) / len(clo_scores) if clo_scores else 0
+    avg_confidence = sum(data.get('confidence', 0.8) for data in clo_results.values()) / len(clo_results) if clo_results else 0
+    
+    # Overall CLO interpretation
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        st.markdown("### 📈 ภาพรวมคะแนน CLO")
+        
+        # Score interpretation
+        if avg_clo >= 85:
+            st.success(f"🌟 **ดีเยี่ยม** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหามีความสอดคล้องกับวัตถุประสงค์การเรียนรู้ในระดับดีเยี่ยม")
+        elif avg_clo >= 70:
+            st.success(f"✅ **ดี** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหาสอดคล้องกับวัตถุประสงค์การเรียนรู้ในระดับดี")
+        elif avg_clo >= 60:
+            st.warning(f"⚠️ **ควรปรับปรุง** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหามีความสอดคล้องในระดับปานกลาง ควรเพิ่มเติมเนื้อหา")
+        else:
+            st.error(f"❌ **ต้องปรับปรุงมาก** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหายังไม่สอดคล้องกับวัตถุประสงค์การเรียนรู้เพียงพอ")
+    
+    with col2:
+        st.markdown("### 🤖 ความมั่นใจ AI")
+        st.metric("AI Confidence", f"{avg_confidence*100:.0f}%")
+        if avg_confidence >= 0.9:
+            st.write("มั่นใจสูงมาก")
+        elif avg_confidence >= 0.8:
+            st.write("มั่นใจสูง")
+        else:
+            st.write("มั่นใจปานกลาง")
+    
+    with col3:
+        st.markdown("### 📊 เกณฑ์คะแนน")
+        st.write("🌟 85%+ = ดีเยี่ยม")
+        st.write("✅ 70-84% = ดี")
+        st.write("⚠️ 60-69% = ควรปรับปรุง")
+        st.write("❌ <60% = ต้องปรับปรุง")
+    
+    # Individual CLO interpretation
+    st.markdown("### 🎯 การวิเคราะห์รายตัว")
+    
+    # Create interpretation table
+    interpretation_data = []
+    for clo_code, clo_data in clo_results.items():
+        score = clo_data['score']
+        confidence = clo_data.get('confidence', 0.8)
+        
+        # Determine status
+        if score >= 85:
+            status = "🌟 ดีเยี่ยม"
+            recommendation = "รักษาคุณภาพและใช้เป็นตัวอย่าง"
+        elif score >= 70:
+            status = "✅ ดี"
+            recommendation = "เพิ่มตัวอย่างและกรณีศึกษา"
+        elif score >= 60:
+            status = "⚠️ ควรปรับปรุง"
+            recommendation = "เพิ่มคำสำคัญและเนื้อหาที่เกี่ยวข้อง"
+        else:
+            status = "❌ ต้องปรับปรุง"
+            recommendation = "ทบทวนและเพิ่มเนื้อหาให้ตรงกับ CLO"
+        
+        interpretation_data.append({
+            'CLO': clo_code,
+            'คะแนน': f"{score:.1f}%",
+            'สถานะ': status,
+            'ความมั่นใจ AI': f"{confidence*100:.0f}%",
+            'คำแนะนำเบื้องต้น': recommendation
+        })
+    
+    interpretation_df = pd.DataFrame(interpretation_data)
+    st.dataframe(interpretation_df, use_container_width=True, hide_index=True)
+    
+    # Keyword analysis
+    st.markdown("### 🔍 การวิเคราะห์คำสำคัญ")
+    
+    total_keywords_found = sum(len(data['found_keywords']) for data in clo_results.values())
+    total_keywords_expected = sum(data['total_keywords'] for data in clo_results.values())
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("คำสำคัญที่พบ", f"{total_keywords_found}/{total_keywords_expected}")
+        coverage_percent = (total_keywords_found / total_keywords_expected * 100) if total_keywords_expected > 0 else 0
+        st.progress(coverage_percent / 100)
+        st.caption(f"ครอบคลุม {coverage_percent:.1f}% ของคำสำคัญทั้งหมด")
+    
+    with col2:
+        # Most and least covered CLOs
+        best_clo = max(clo_results.items(), key=lambda x: x[1]['score'])[0]
+        worst_clo = min(clo_results.items(), key=lambda x: x[1]['score'])[0]
+        
+        st.write(f"**💚 CLO ที่ดีที่สุด:** {best_clo} ({clo_results[best_clo]['score']:.1f}%)")
+        st.write(f"**💔 CLO ที่ควรปรับปรุงที่สุด:** {worst_clo} ({clo_results[worst_clo]['score']:.1f}%)")
+    
+    # Specific recommendations for low-scoring CLOs
+    low_clos = [(clo, data) for clo, data in clo_results.items() if data['score'] < 70]
+    if low_clos:
+        st.markdown("### 💡 คำแนะนำเฉพาะสำหรับ CLO ที่ต้องปรับปรุง")
+        for clo_code, clo_data in low_clos:
+            with st.expander(f"แนวทางปรับปรุง {clo_code} (คะแนน: {clo_data['score']:.1f}%)"):
+                st.write(f"**วัตถุประสงค์:** {clo_data['description']}")
+                
+                # Get course code from session state
+                course_code = st.session_state.get('selected_course_code', '282712')
+                missing_keywords = [kw for kw in COURSE_DESCRIPTIONS.get(course_code, {}).get('keywords', {}).get(clo_code, []) 
+                                   if kw not in clo_data['found_keywords']][:5]
+                
+                if missing_keywords:
+                    st.write("**คำสำคัญที่ควรเพิ่ม:**")
+                    for kw in missing_keywords:
+                        st.write(f"• {kw}")
+                
+                st.write("**แนวทางการปรับปรุง:**")
+                st.write(f"1. เพิ่มเนื้อหาที่เกี่ยวข้องกับ: {clo_data['description'][:100]}...")
+                st.write("2. ใช้คำสำคัญที่แนะนำในบริบทที่เหมาะสม")
+                st.write("3. เพิ่มตัวอย่างหรือกรณีศึกษาที่สอดคล้อง")
+                st.write("4. ตรวจสอบว่าเนื้อหาตอบโจทย์วัตถุประสงค์อย่างชัดเจน")
+
+def display_comprehensive_interpretation(results):
+    """Display comprehensive interpretation of all assessment results"""
+    st.subheader("📊 การแปลผลการประเมินโดยรวม")
+    
+    # Overview metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        clo_avg = results['overall_scores']['clo_average']
+        st.metric("CLO Average", f"{clo_avg:.1f}%", 
+                 f"{clo_avg-70:.1f}%" if clo_avg >= 70 else f"{clo_avg-70:.1f}%")
+    
+    with col2:
+        plo_avg = results['overall_scores']['plo_average']
+        st.metric("PLO Average", f"{plo_avg:.1f}%",
+                 f"{plo_avg-70:.1f}%" if plo_avg >= 70 else f"{plo_avg-70:.1f}%")
+    
+    with col3:
+        ylo_avg = results['overall_scores']['ylo_average']
+        st.metric("YLO Average", f"{ylo_avg:.1f}%",
+                 f"{ylo_avg-70:.1f}%" if ylo_avg >= 70 else f"{ylo_avg-70:.1f}%")
+    
+    with col4:
+        confidence = results['overall_scores'].get('overall_confidence', 0.8)
+        st.metric("AI Confidence", f"{confidence*100:.0f}%")
+    
+    st.markdown("---")
+    
+    # Detailed interpretation
+    st.markdown("### 🎯 การวิเคราะห์ความสัมพันธ์ CLO → PLO → YLO")
+    
+    # Create interpretation table
+    interpretation_data = []
+    
+    for clo_code, clo_data in results['clo_results'].items():
+        # Get related PLOs and YLOs
+        related_plos = results['alignment_matrix']['clo_to_plo'].get(clo_code, [])
+        related_ylos = []
+        for plo in related_plos:
+            related_ylos.extend(results['alignment_matrix']['plo_to_ylo'].get(plo, []))
+        
+        interpretation_data.append({
+            'CLO': clo_code,
+            'คะแนน': f"{clo_data['score']:.1f}%",
+            'ความมั่นใจ': f"{clo_data.get('confidence', 0.8)*100:.0f}%",
+            'การวิเคราะห์': "🤖 AI" if clo_data.get('ai_enhanced') else "📊 Rule",
+            'PLO ที่เชื่อมโยง': ', '.join(related_plos),
+            'YLO ที่สนับสนุน': ', '.join(set(related_ylos))
+        })
+    
+    interpretation_df = pd.DataFrame(interpretation_data)
+    st.dataframe(interpretation_df, use_container_width=True, hide_index=True)
+    
+    # PLO Coverage Analysis
+    st.markdown("### 📈 การครอบคลุม PLO")
+    
+    plo_coverage = {
+        'PLO1': len([clo for clo, plos in results['alignment_matrix']['clo_to_plo'].items() if 'PLO1' in plos]),
+        'PLO2': len([clo for clo, plos in results['alignment_matrix']['clo_to_plo'].items() if 'PLO2' in plos]),
+        'PLO3': len([clo for clo, plos in results['alignment_matrix']['clo_to_plo'].items() if 'PLO3' in plos])
+    }
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**PLO1: เทคโนโลยีและการมีส่วนร่วม**")
+        if plo_coverage['PLO1'] > 0:
+            st.success(f"✅ มี {plo_coverage['PLO1']} CLOs สนับสนุน")
+            if 'PLO1' in results['plo_results']:
+                st.write(f"คะแนน: {results['plo_results']['PLO1']['score']:.1f}%")
+        else:
+            st.error("❌ ไม่มี CLO สนับสนุน")
+            st.write("แนะนำ: เพิ่มเนื้อหาด้านเทคโนโลยี")
+    
+    with col2:
+        st.markdown("**PLO2: การวิจัยและการบูรณาการ**")
+        if plo_coverage['PLO2'] > 0:
+            st.success(f"✅ มี {plo_coverage['PLO2']} CLOs สนับสนุน")
+            if 'PLO2' in results['plo_results']:
+                st.write(f"คะแนน: {results['plo_results']['PLO2']['score']:.1f}%")
+        else:
+            st.error("❌ ไม่มี CLO สนับสนุน")
+            st.write("แนะนำ: เพิ่มเนื้อหาด้านการวิจัย")
+    
+    with col3:
+        st.markdown("**PLO3: การสื่อสารและการถ่ายทอด**")
+        if plo_coverage['PLO3'] > 0:
+            st.success(f"✅ มี {plo_coverage['PLO3']} CLOs สนับสนุน")
+            if 'PLO3' in results['plo_results']:
+                st.write(f"คะแนน: {results['plo_results']['PLO3']['score']:.1f}%")
+        else:
+            st.error("❌ ไม่มี CLO สนับสนุน")
+            st.write("แนะนำ: เพิ่มเนื้อหาด้านการสื่อสาร")
+    
+    # YLO Level Analysis
+    st.markdown("### 📊 การกระจายตามระดับ YLO")
+    
+    year1_ylos = [ylo for ylo, data in results['ylo_results'].items() if data['level'] == 'Year 1']
+    year2_ylos = [ylo for ylo, data in results['ylo_results'].items() if data['level'] == 'Year 2']
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**ชั้นปีที่ 1**")
+        if year1_ylos:
+            for ylo in year1_ylos:
+                ylo_data = results['ylo_results'][ylo]
+                st.write(f"• {ylo} ({ylo_data['cognitive_level']}): {ylo_data['score']:.1f}%")
+        else:
+            st.info("ไม่มี YLO ชั้นปีที่ 1")
+    
+    with col2:
+        st.markdown("**ชั้นปีที่ 2**")
+        if year2_ylos:
+            for ylo in year2_ylos:
+                ylo_data = results['ylo_results'][ylo]
+                st.write(f"• {ylo} ({ylo_data['cognitive_level']}): {ylo_data['score']:.1f}%")
+        else:
+            st.info("ไม่มี YLO ชั้นปีที่ 2")
+    
+    # Cognitive Level Distribution
+    st.markdown("### 🧠 การกระจายตามระดับการคิด")
+    
+    cognitive_levels = defaultdict(list)
+    for ylo_code, ylo_data in results['ylo_results'].items():
+        cognitive_levels[ylo_data['cognitive_level']].append((ylo_code, ylo_data['score']))
+    
+    for level in ['Understanding', 'Applying', 'Evaluating', 'Creating']:
+        if level in cognitive_levels:
+            st.write(f"**{level}:**")
+            for ylo, score in cognitive_levels[level]:
+                st.write(f"• {ylo}: {score:.1f}%")
+        else:
+            st.write(f"**{level}:** ไม่มี")
+    
+    # Comprehensive Recommendations
+    st.markdown("### 💡 ข้อเสนอแนะเชิงลึก")
+    
+    recommendations = []
+    
+    # CLO-based recommendations
+    low_clos = [clo for clo, data in results['clo_results'].items() if data['score'] < 70]
+    if low_clos:
+        recommendations.append({
+            'ประเภท': 'CLO',
+            'ปัญหา': f"CLO ที่ต่ำกว่าเกณฑ์: {', '.join(low_clos)}",
+            'แนวทางแก้ไข': 'เพิ่มเนื้อหาและคำสำคัญที่สอดคล้องกับวัตถุประสงค์'
+        })
+    
+    # PLO coverage recommendations
+    missing_plos = [plo for plo in ['PLO1', 'PLO2', 'PLO3'] if plo not in results['plo_results']]
+    if missing_plos:
+        plo_descriptions = {
+            'PLO1': 'เทคโนโลยีและการมีส่วนร่วม',
+            'PLO2': 'การวิจัยและการบูรณาการ',
+            'PLO3': 'การสื่อสารและการถ่ายทอด'
+        }
+        for plo in missing_plos:
+            recommendations.append({
+                'ประเภท': 'PLO',
+                'ปัญหา': f"ขาด {plo}: {plo_descriptions[plo]}",
+                'แนวทางแก้ไข': f'เพิ่มเนื้อหาด้าน{plo_descriptions[plo]}'
+            })
+    
+    # YLO level recommendations
+    if not year2_ylos and results['course_code'] in ['282721', '282722', '282723', '282724', '282731', '282732', '282733', '282734']:
+        recommendations.append({
+            'ประเภท': 'YLO',
+            'ปัญหา': 'ไม่มีเนื้อหาระดับชั้นปีที่ 2',
+            'แนวทางแก้ไข': 'เพิ่มเนื้อหาที่มีความซับซ้อนและการสร้างสรรค์มากขึ้น'
+        })
+    
+    # Cognitive level recommendations
+    if 'Creating' not in cognitive_levels and 'Evaluating' not in cognitive_levels:
+        recommendations.append({
+            'ประเภท': 'Cognitive',
+            'ปัญหา': 'ขาดเนื้อหาระดับการคิดขั้นสูง',
+            'แนวทางแก้ไข': 'เพิ่มกิจกรรมการวิเคราะห์ ประเมิน และสร้างสรรค์'
+        })
+    
+    if recommendations:
+        rec_df = pd.DataFrame(recommendations)
+        st.dataframe(rec_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("✅ เนื้อหามีความสมดุลและครอบคลุมดีแล้ว")
+    
+    # Success factors
+    st.markdown("### ✨ จุดเด่นของเนื้อหา")
+    
+    strengths = []
+    
+    # High-scoring CLOs
+    high_clos = [clo for clo, data in results['clo_results'].items() if data['score'] >= 85]
+    if high_clos:
+        strengths.append(f"• CLO ที่มีคะแนนดีเยี่ยม: {', '.join(high_clos)}")
+    
+    # Good PLO coverage
+    if len(results['plo_results']) >= 2:
+        strengths.append(f"• ครอบคลุม PLO หลายด้าน ({len(results['plo_results'])} PLOs)")
+    
+    # High AI confidence
+    if results['overall_scores'].get('overall_confidence', 0) > 0.9:
+        strengths.append("• AI มีความมั่นใจสูงในการวิเคราะห์")
+    
+    # Balanced YLO levels
+    if year1_ylos and year2_ylos:
+        strengths.append("• มีความสมดุลระหว่างเนื้อหาชั้นปีที่ 1 และ 2")
+    
+    if strengths:
+        for strength in strengths:
+            st.write(strength)
+    else:
+        st.info("พัฒนาเนื้อหาต่อไปเพื่อสร้างจุดเด่น")
+
 def display_enhanced_clo_analysis(clo_results):
     """Display enhanced CLO analysis with AI insights using gauge charts"""
     st.subheader("📋 Course Learning Outcomes (CLO) Analysis")
@@ -1777,6 +2170,9 @@ def display_enhanced_clo_analysis(clo_results):
                 st.warning(f"⚠️ Fair ({score:.1f}%)")
             else:
                 st.error(f"❌ Poor ({score:.1f}%)")
+    
+    # Add comprehensive interpretation section
+    display_clo_interpretation(clo_results)
     
     # Detailed CLO Analysis with AI insights
     for clo_code, clo_data in clo_results.items():
@@ -2234,6 +2630,16 @@ def main():
 ### 4. กรณีศึกษา
 การจัดการน้ำในพื้นที่ลุ่มน้ำโขง โดยใช้การวิจัยเชิงสหวิทยาการ
 และการวิเคราะห์ข้อมูลด้วยเทคนิคทางสถิติ
+
+### 5. การวิเคราะห์ข้อมูล
+- การใช้เครื่องมือสถิติในการวิเคราะห์คุณภาพน้ำ
+- การประเมินประสิทธิภาพของระบบจัดการน้ำ
+- การพัฒนาแบบจำลองทำนายคุณภาพน้ำ
+
+### 6. การสื่อสารและการมีส่วนร่วม
+- การสื่อสารข้อมูลทางวิชาการแก่ชุมชน
+- การจัดกระบวนการมีส่วนร่วมในการตัดสินใจ
+- การถ่ายทอดเทคโนโลยีสู่ชุมชน
             """
             
             content = st.text_area(
@@ -2259,11 +2665,24 @@ def main():
             if st.button("🔍 ทำการวิเคราะห์", type="primary", use_container_width=True):
                 if content.strip():
                     with st.spinner("กำลังประมวลผล CLO-PLO-YLO..."):
-                        # AI Analysis (if enabled)
+                        # Progress tracking
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        
+                        # Step 1: AI Analysis (if enabled)
                         ai_analysis = None
                         if use_ai:
+                            status_text.text("🤖 Performing AI analysis...")
+                            progress_bar.progress(25)
+                            time.sleep(0.5)
+                            
                             content_hash = hashlib.md5(content.encode()).hexdigest()
                             ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai)
+                        
+                        # Step 2: Multi-level analysis
+                        status_text.text("🎯 Performing multi-level assessment...")
+                        progress_bar.progress(50)
+                        time.sleep(0.5)
                         
                         # Initialize assessment engine
                         engine = MultiLevelAssessmentEngine()
@@ -2275,17 +2694,41 @@ def main():
                             ai_analysis
                         )
                         
-                        # Auto-save to Google Sheets if connected
-                        if hasattr(st.session_state, 'current_spreadsheet'):
+                        # Step 3: Save to Google Sheets (if connected)
+                        if GSHEETS_AVAILABLE and hasattr(st.session_state, 'current_spreadsheet'):
+                            status_text.text("💾 Saving to Google Sheets...")
+                            progress_bar.progress(75)
+                            
                             file_info = {
                                 'name': 'ป้อนข้อความ',
                                 'type': 'text/plain',
-                                'size': 0
+                                'size': len(content.encode('utf-8'))
                             }
                             
                             save_success, save_message = save_assessment_to_sheets(results, file_info)
                             if save_success:
                                 st.success(f"✅ {save_message}")
+                            else:
+                                st.warning(f"⚠️ {save_message}")
+                        
+                        # Step 4: Complete
+                        status_text.text("✅ Analysis complete!")
+                        progress_bar.progress(100)
+                        time.sleep(0.5)
+                        
+                        # Clear progress indicators
+                        progress_bar.empty()
+                        status_text.empty()
+                        
+                        # Store results in session state
+                        st.session_state.analysis_results = results
+                        st.session_state.slide_content = content
+                        
+                        # Show success message
+                        if ai_analysis:
+                            st.success("✅ การวิเคราะห์ด้วย AI เสร็จสมบูรณ์!")
+                        else:
+                            st.success("✅ การวิเคราะห์แบบ Rule-based เสร็จสมบูรณ์!")
                 else:
                     st.warning("กรุณาป้อนเนื้อหาเพื่อทำการวิเคราะห์")
         
@@ -2409,7 +2852,7 @@ def main():
         ### 3. การวิเคราะห์
         - **Rule-based**: วิเคราะห์ตามคำสำคัญและโครงสร้าง
         - **AI Enhanced**: วิเคราะห์เชิงลึกด้วย AI (ต้องมี API key)
-        - **Auto-save**: บันทึกผลลงGoogleSheetsอัตโนมัติ (หากเชื่อมต่อแล้ว)
+        - **Auto-save**: บันทึกผลลง Google Sheets อัตโนมัติ (หากเชื่อมต่อแล้ว)
         
         ### 4. การจัดการข้อมูล
         - **ประวัติการประเมิน**: ดูการประเมินที่ผ่านมาทั้งหมด
@@ -2417,7 +2860,7 @@ def main():
         - **ดาวน์โหลด**: ส่งออกข้อมูลเป็น CSV
         
         ### 5. การอ่านผล
-        - **CLO**: ความสอดคล้องกับวัตถุประสงค์รายวิชา
+        - **CLO**: ความสอดคล้องกับวัตถุประสงค์รายวิชา (4 CLOs ต่อรายวิชา)
         - **PLO**: ความสอดคล้องกับผลการเรียนรู้หลักสูตร
         - **YLO**: ความสอดคล้องกับผลการเรียนรู้ชั้นปี
         
@@ -2429,11 +2872,98 @@ def main():
         
         ### 7. โครงสร้างข้อมูลใน Google Sheets
         - **Assessment_Summary**: สรุปผลการประเมินแต่ละครั้ง
-        - **CLO_Details**: รายละเอียดคะแนน CLO
+        - **CLO_Details**: รายละเอียดคะแนน CLO ทั้ง 4 ตัว
         - **PLO_Details**: รายละเอียดคะแนน PLO
-        - **YLO_Details**: รายละเอียดคะแนน YLO
+        - **YLO_Details**: รายละเอียดคะแนน YLO  
         - **Content_Analysis**: ข้อมูลการวิเคราะห์เนื้อหา
+        
+        ### 8. การติดตั้งระบบ
+        
+        **Dependencies ที่จำเป็น:**
+        ```bash
+        pip install streamlit pandas plotly gspread google-auth openai
+        ```
+        
+        **การตั้งค่า Secrets (สำหรับ local):**
+        สร้างไฟล์ `.streamlit/secrets.toml`:
+        ```toml
+        OPENAI_API_KEY = "sk-your-openai-api-key"
+        GOOGLE_CREDENTIALS_JSON = '''
+        {
+          "type": "service_account",
+          "project_id": "your-project-id",
+          ...
+        }
+        '''
+        ```
+        
+        **การรันระบบ:**
+        ```bash
+        streamlit run app.py
+        ```
+        
+        ### 9. ฟีเจอร์หลัก
+        
+        #### 🎯 การประเมินแบบหลายระดับ
+        - วิเคราะห์เนื้อหาตาม CLO → PLO → YLO
+        - แสดงผลด้วย Gauge Charts และ Sankey Diagrams
+        - การแปลผลอัตโนมัติพร้อมคำแนะนำ
+        
+        #### 🤖 AI Enhancement
+        - วิเคราะห์เนื้อหาด้วย AI (ถ้ามี OpenAI API)
+        - ความมั่นใจ AI สูงถึง 99.5%
+        - ข้อเสนอแนะอัจฉริยะ
+        
+        #### 📊 Google Sheets Integration
+        - บันทึกผลการประเมินอัตโนมัติ
+        - ติดตามประวัติการประเมิน
+        - วิเคราะห์แนวโน้มรายวิชา
+        - ส่งออกข้อมูลเป็น CSV
+        
+        #### 📈 Analytics Dashboard
+        - สถิติการประเมินแต่ละรายวิชา
+        - เปรียบเทียบผลการประเมินย้อนหลัง
+        - แนวโน้มการปรับปรุงเนื้อหา
+        
+        ### 10. การแก้ปัญหาเบื้องต้น
+        
+        **ปัญหา:** Import Error gspread
+        **แก้:** `pip install gspread google-auth`
+        
+        **ปัญหา:** Google Sheets connection failed
+        **แก้:** ตรวจสอบ Service Account credentials และ API permissions
+        
+        **ปัญหา:** AI analysis ไม่ทำงาน
+        **แก้:** ตรวจสอบ OpenAI API key ใน secrets.toml
+        
+        **ปัญหา:** Streamlit หน่วง
+        **แก้:** ลด cache ด้วย `streamlit cache clear`
         """)
+        
+        # System information
+        st.markdown("---")
+        st.markdown("### ℹ️ ข้อมูลระบบ")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**🔧 เวอร์ชัน**")
+            st.write("• v3.0 Enhanced")
+            st.write("• Google Sheets Ready")
+            st.write("• AI Integrated")
+        
+        with col2:
+            st.markdown("**📊 คุณสมบัติ**")
+            st.write("• 4 CLOs ต่อรายวิชา")
+            st.write("• Multi-level Analysis")
+            st.write("• Auto-save")
+        
+        with col3:
+            st.markdown("**🎯 รายวิชา**")
+            st.write(f"• {len(COURSE_DESCRIPTIONS)} รายวิชา")
+            st.write("• 3 PLOs")
+            st.write("• 6 YLOs")
+        
         st.markdown('</div>', unsafe_allow_html=True)
 
 if __name__ == "__main__":
