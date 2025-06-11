@@ -2054,6 +2054,14 @@ def show_multiple_file_upload_interface():
                 
                 return file_assessments, aggregated_results
     
+    # Return results from session state if available
+    file_assessments = st.session_state.get('file_assessments', None)
+    aggregated_results = st.session_state.get('aggregated_results', None)
+    
+    # Only return if they belong to multiple analysis mode
+    if st.session_state.get('analysis_mode') == 'multiple':
+        return file_assessments, aggregated_results
+    
     return None, None
 
 # Main Application
@@ -2413,12 +2421,16 @@ def main():
     
     with tab2:
         # Multiple file upload interface
-        file_assessments, aggregated_results = show_multiple_file_upload_interface()
-        
-        # Display aggregated results if available
-        if aggregated_results:
-            st.markdown("---")
-            create_multi_file_dashboard(aggregated_results, dashboard_key="tab2")
+        try:
+            file_assessments, aggregated_results = show_multiple_file_upload_interface()
+            
+            # Display aggregated results if available
+            if aggregated_results is not None:
+                st.markdown("---")
+                create_multi_file_dashboard(aggregated_results, dashboard_key="tab2")
+        except Exception as e:
+            st.error(f"Error in multi-file analysis: {str(e)}")
+            st.exception(e)
     
     with tab3:
         # Display analysis results
