@@ -1,9 +1,8 @@
+# Core Streamlit and Data Processing
 streamlit>=1.28.0
 pandas>=1.5.0
-plotly>=5.15.0
-python-dotenv>=1.0.0
 numpy>=1.24.0
-
+plotly>=5.15.0
 
 # Google Sheets Integration
 gspread>=5.10.0
@@ -16,4 +15,3 @@ openai>=1.0.0
 
 # Utilities
 python-dateutil>=2.8.0
-hashlib2>=1.0.0
