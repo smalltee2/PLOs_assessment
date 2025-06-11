@@ -580,7 +580,9 @@ if GSHEETS_AVAILABLE:
                     
                     if is_duplicate:
                         st.warning(f"⚠️ พบการประเมินซ้ำกับ ID: {original_assessment_id}")
-                        if not st.confirm("ต้องการบันทึกต่อไปหรือไม่?"):
+                        # Simple confirmation without using st.confirm which might not exist
+                        continue_save = st.button("บันทึกต่อไปอย่างไรก็ตาม", key="confirm_duplicate")
+                        if not continue_save:
                             return False, "ยกเลิกการบันทึกเนื่องจากข้อมูลซ้ำ"
                 
                 # Create timestamp
@@ -2454,8 +2456,582 @@ def create_multi_level_dashboard(results):
     with tab5:
         display_comprehensive_interpretation(results)
 
+# Missing Display Functions
+def display_clo_interpretation(clo_results):
+    """Display detailed interpretation of CLO analysis results"""
+    st.markdown("---")
+    st.subheader("📊 การแปลผลการวิเคราะห์ CLO")
+    
+    # Calculate average CLO score
+    clo_scores = [data['score'] for data in clo_results.values()]
+    avg_clo = sum(clo_scores) / len(clo_scores) if clo_scores else 0
+    avg_confidence = sum(data.get('confidence', 0.8) for data in clo_results.values()) / len(clo_results) if clo_results else 0
+    
+    # Overall CLO interpretation
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        st.markdown("### 📈 ภาพรวมคะแนน CLO")
+        
+        # Score interpretation
+        if avg_clo >= 85:
+            st.success(f"🌟 **ดีเยี่ยม** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหามีความสอดคล้องกับวัตถุประสงค์การเรียนรู้ในระดับดีเยี่ยม")
+        elif avg_clo >= 70:
+            st.success(f"✅ **ดี** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหาสอดคล้องกับวัตถุประสงค์การเรียนรู้ในระดับดี")
+        elif avg_clo >= 60:
+            st.warning(f"⚠️ **ควรปรับปรุง** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหามีความสอดคล้องในระดับปานกลาง ควรเพิ่มเติมเนื้อหา")
+        else:
+            st.error(f"❌ **ต้องปรับปรุงมาก** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหายังไม่สอดคล้องกับวัตถุประสงค์การเรียนรู้เพียงพอ")
+    
+    with col2:
+        st.markdown("### 🤖 ความมั่นใจ AI")
+        st.metric("AI Confidence", f"{avg_confidence*100:.0f}%")
+        if avg_confidence >= 0.9:
+            st.write("มั่นใจสูงมาก")
+        elif avg_confidence >= 0.8:
+            st.write("มั่นใจสูง")
+        else:
+            st.write("มั่นใจปานกลาง")
+    
+    with col3:
+        st.markdown("### 📊 เกณฑ์คะแนน")
+        st.write("🌟 85%+ = ดีเยี่ยม")
+        st.write("✅ 70-84% = ดี")
+        st.write("⚠️ 60-69% = ควรปรับปรุง")
+        st.write("❌ <60% = ต้องปรับปรุง")
+    
+    # Individual CLO interpretation
+    st.markdown("### 🎯 การวิเคราะห์รายตัว")
+    
+    # Create interpretation table
+    interpretation_data = []
+    for clo_code, clo_data in clo_results.items():
+        score = clo_data['score']
+        confidence = clo_data.get('confidence', 0.8)
+        
+        # Determine status
+        if score >= 85:
+            status = "🌟 ดีเยี่ยม"
+            recommendation = "รักษาคุณภาพและใช้เป็นตัวอย่าง"
+        elif score >= 70:
+            status = "✅ ดี"
+            recommendation = "เพิ่มตัวอย่างและกรณีศึกษา"
+        elif score >= 60:
+            status = "⚠️ ควรปรับปรุง"
+            recommendation = "เพิ่มคำสำคัญและเนื้อหาที่เกี่ยวข้อง"
+        else:
+            status = "❌ ต้องปรับปรุง"
+            recommendation = "ทบทวนและเพิ่มเนื้อหาให้ตรงกับ CLO"
+        
+        interpretation_data.append({
+            'CLO': clo_code,
+            'คะแนน': f"{score:.1f}%",
+            'สถานะ': status,
+            'ความมั่นใจ AI': f"{confidence*100:.0f}%",
+            'คำแนะนำเบื้องต้น': recommendation
+        })
+    
+    interpretation_df = pd.DataFrame(interpretation_data)
+    st.dataframe(interpretation_df, use_container_width=True, hide_index=True)
+
+def display_enhanced_clo_analysis(clo_results):
+    """Display enhanced CLO analysis with AI insights using gauge charts"""
+    st.subheader("📋 Course Learning Outcomes (CLO) Analysis")
+    
+    if not clo_results:
+        st.warning("No CLO data available for this course")
+        return
+    
+    # Display CLO Gauge Charts - now 4 CLOs per course
+    clo_items = list(clo_results.items())
+    
+    # Create columns for gauge charts (4 columns for 4 CLOs)
+    cols = st.columns(4)
+    for j, (clo_code, clo_data) in enumerate(clo_items):
+        with cols[j % 4]:
+            score = clo_data['score']
+            confidence = clo_data.get('confidence', 0.8)
+            
+            # Create gauge chart
+            fig = create_enhanced_gauge_chart(
+                score, 
+                f"{clo_code} Alignment", 
+                confidence if clo_data.get('ai_enhanced') else None
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Status indicator
+            if score >= 85:
+                st.success(f"🌟 Excellent ({score:.1f}%)")
+            elif score >= 70:
+                st.success(f"✅ Good ({score:.1f}%)")
+            elif score >= 60:
+                st.warning(f"⚠️ Fair ({score:.1f}%)")
+            else:
+                st.error(f"❌ Poor ({score:.1f}%)")
+    
+    # Add comprehensive interpretation section
+    display_clo_interpretation(clo_results)
+    
+    # Detailed CLO Analysis with AI insights
+    for clo_code, clo_data in clo_results.items():
+        with st.expander(f"{clo_code}: {clo_data['description'][:60]}..."):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.write(f"**Description:** {clo_data['description']}")
+                st.write(f"**Keywords Found:** {', '.join(clo_data['found_keywords']) if clo_data['found_keywords'] else 'None'}")
+                
+                # AI Insights (if available)
+                if clo_data.get('ai_insights'):
+                    st.write("**🤖 AI Insights:**")
+                    for insight in clo_data['ai_insights']:
+                        st.write(f"• {insight}")
+                
+                # Coverage bar
+                coverage = clo_data['coverage']
+                st.progress(coverage)
+                st.caption(f"Keyword Coverage: {coverage*100:.1f}% ({len(clo_data['found_keywords'])}/{clo_data['total_keywords']})")
+            
+            with col2:
+                score = clo_data['score']
+                confidence = clo_data.get('confidence', 0.8)
+                
+                st.metric("Score", f"{score:.1f}%")
+                st.metric("Confidence", f"{confidence*100:.0f}%")
+                
+                if clo_data.get('ai_enhanced'):
+                    st.success("🤖 AI Enhanced")
+                else:
+                    st.info("📊 Rule-based")
+                
+                # Score status
+                if score >= 80:
+                    st.success("Excellent")
+                elif score >= 70:
+                    st.info("Good")
+                elif score >= 60:
+                    st.warning("Fair")
+                else:
+                    st.error("Needs Improvement")
+
+def display_plo_analysis(plo_results):
+    """Display Program Learning Outcome analysis with gauge charts"""
+    st.subheader("🎯 Program Learning Outcomes (PLO) Analysis")
+    
+    if not plo_results:
+        st.warning("No PLO mapping available for this course")
+        return
+    
+    # Display PLO Gauge Charts
+    plo_items = list(plo_results.items())
+    
+    # Create columns for gauge charts
+    cols = st.columns(len(plo_items))
+    for i, (plo_code, plo_data) in enumerate(plo_items):
+        with cols[i]:
+            score = plo_data['score']
+            confidence = plo_data.get('confidence', 0.8)
+            
+            # Create gauge chart
+            fig = create_enhanced_gauge_chart(
+                score, 
+                f"{plo_code}\n{ENHANCED_PLOS[plo_code]['title'][:20]}...",
+                confidence
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Status indicator  
+            if score >= 85:
+                st.success(f"🌟 Excellent ({score:.1f}%)")
+            elif score >= 70:
+                st.success(f"✅ Good ({score:.1f}%)")
+            elif score >= 60:
+                st.warning(f"⚠️ Fair ({score:.1f}%)")
+            else:
+                st.error(f"❌ Poor ({score:.1f}%)")
+    
+    st.markdown("---")
+    
+    # Detailed PLO Analysis
+    for plo_code, plo_data in plo_results.items():
+        with st.expander(f"{plo_code}: {ENHANCED_PLOS[plo_code]['title']}"):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.write(f"**Description:** {plo_data['description']}")
+                st.write(f"**Related CLOs:** {', '.join(plo_data['related_clos'])}")
+            
+            with col2:
+                score = plo_data['score']
+                confidence = plo_data.get('confidence', 0.8)
+                st.metric(f"{plo_code} Score", f"{score:.1f}%")
+                st.metric("Confidence", f"{confidence*100:.0f}%")
+
+def display_ylo_analysis(ylo_results):
+    """Display Year Learning Outcome analysis with gauge charts"""
+    st.subheader("📈 Year Learning Outcomes (YLO) Analysis")
+    
+    if not ylo_results:
+        st.warning("No YLO mapping available for this course")
+        return
+    
+    # Display YLO Gauge Charts
+    ylo_items = list(ylo_results.items())
+    
+    # Group by Year Level
+    year1_ylos = [(code, data) for code, data in ylo_items if data['level'] == 'Year 1']
+    year2_ylos = [(code, data) for code, data in ylo_items if data['level'] == 'Year 2']
+    
+    if year1_ylos:
+        st.write("**Year 1 Learning Outcomes:**")
+        cols = st.columns(len(year1_ylos))
+        for i, (ylo_code, ylo_data) in enumerate(year1_ylos):
+            with cols[i]:
+                score = ylo_data['score']
+                confidence = ylo_data.get('confidence', 0.8)
+                
+                # Create gauge chart
+                fig = create_enhanced_gauge_chart(
+                    score, 
+                    f"{ylo_code}\n{ylo_data['cognitive_level']}",
+                    confidence
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Status indicator
+                if score >= 85:
+                    st.success(f"🌟 Excellent ({score:.1f}%)")
+                elif score >= 70:
+                    st.success(f"✅ Good ({score:.1f}%)")
+                elif score >= 60:
+                    st.warning(f"⚠️ Fair ({score:.1f}%)")
+                else:
+                    st.error(f"❌ Poor ({score:.1f}%)")
+    
+    if year2_ylos:
+        st.write("**Year 2 Learning Outcomes:**")
+        cols = st.columns(len(year2_ylos))
+        for i, (ylo_code, ylo_data) in enumerate(year2_ylos):
+            with cols[i]:
+                score = ylo_data['score']
+                confidence = ylo_data.get('confidence', 0.8)
+                
+                # Create gauge chart
+                fig = create_enhanced_gauge_chart(
+                    score, 
+                    f"{ylo_code}\n{ylo_data['cognitive_level']}",
+                    confidence
+                )
+                st.plotly_chart(fig, use_container_width=True)
+                
+                # Status indicator
+                if score >= 85:
+                    st.success(f"🌟 Excellent ({score:.1f}%)")
+                elif score >= 70:
+                    st.success(f"✅ Good ({score:.1f}%)")
+                elif score >= 60:
+                    st.warning(f"⚠️ Fair ({score:.1f}%)")
+                else:
+                    st.error(f"❌ Poor ({score:.1f}%)")
+    
+    st.markdown("---")
+    
+    # Detailed YLO Analysis
+    for ylo_code, ylo_data in ylo_results.items():
+        with st.expander(f"{ylo_code}: {ylo_data['level']} - {ylo_data['cognitive_level']}"):
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.write(f"**Description:** {ylo_data['description']}")
+                st.write(f"**Related PLOs:** {', '.join(ylo_data['related_plos'])}")
+                st.write(f"**Year Level:** {ylo_data['level']}")
+                st.write(f"**Cognitive Level:** {ylo_data['cognitive_level']}")
+            
+            with col2:
+                score = ylo_data['score']
+                confidence = ylo_data.get('confidence', 0.8)
+                st.metric(f"{ylo_code} Score", f"{score:.1f}%")
+                st.metric("Confidence", f"{confidence*100:.0f}%")
+
+def display_alignment_matrix(results):
+    """Display alignment matrix visualization"""
+    st.subheader("🔗 Learning Outcome Alignment Matrix")
+    
+    # Add interpretation guide
+    with st.expander("📖 วิธีอ่านแผนภาพความสัมพันธ์"):
+        st.write("**สีของโหนด:**")
+        st.write("• 🔴 สีแดง = CLO (Course Learning Outcomes)")
+        st.write("• 🔵 สีน้ำเงิน = PLO (Program Learning Outcomes)")
+        st.write("• 🟢 สีเขียว = YLO (Year Learning Outcomes)")
+        st.write("")
+        st.write("**ขนาดของเส้นเชื่อม:**")
+        st.write("• ยิ่งหนา = คะแนนสูง/ความสัมพันธ์แน่นแฟ้น")
+        st.write("• ยิ่งบาง = คะแนนต่ำ/ควรเสริมความสัมพันธ์")
+    
+    # Sankey Diagram for CLO-PLO-YLO Flow
+    st.subheader("📊 Learning Outcome Flow")
+    
+    # Prepare data for Sankey diagram
+    nodes = []
+    links = []
+    node_colors = []
+    
+    # Add CLO nodes
+    clo_nodes = list(results['clo_results'].keys())
+    for clo in clo_nodes:
+        nodes.append(f"CLO: {clo}")
+        node_colors.append('#FF9999')
+    
+    # Add PLO nodes
+    plo_nodes = list(results['plo_results'].keys())
+    for plo in plo_nodes:
+        nodes.append(f"PLO: {plo}")
+        node_colors.append('#99CCFF')
+    
+    # Add YLO nodes
+    ylo_nodes = list(results['ylo_results'].keys())
+    for ylo in ylo_nodes:
+        nodes.append(f"YLO: {ylo}")
+        node_colors.append('#99FF99')
+    
+    # Create links
+    matrix = results['alignment_matrix']
+    
+    # CLO to PLO links
+    for clo, plos in matrix['clo_to_plo'].items():
+        clo_idx = nodes.index(f"CLO: {clo}")
+        for plo in plos:
+            plo_idx = nodes.index(f"PLO: {plo}")
+            links.append({
+                'source': clo_idx,
+                'target': plo_idx,
+                'value': results['clo_results'][clo]['score']
+            })
+    
+    # PLO to YLO links
+    for plo, ylos in matrix['plo_to_ylo'].items():
+        plo_idx = nodes.index(f"PLO: {plo}")
+        for ylo in ylos:
+            ylo_idx = nodes.index(f"YLO: {ylo}")
+            links.append({
+                'source': plo_idx,
+                'target': ylo_idx,
+                'value': results['plo_results'][plo]['score']
+            })
+    
+    # Create Sankey diagram
+    if nodes and links:
+        fig = go.Figure(data=[go.Sankey(
+            node=dict(
+                pad=15,
+                thickness=20,
+                line=dict(color="black", width=0.5),
+                label=nodes,
+                color=node_colors
+            ),
+            link=dict(
+                source=[link['source'] for link in links],
+                target=[link['target'] for link in links],
+                value=[link['value'] for link in links]
+            )
+        )])
+        
+        fig.update_layout(
+            title_text="Learning Outcome Alignment Flow",
+            font_size=12,
+            height=500
+        )
+        st.plotly_chart(fig, use_container_width=True)
+    
+    # Enhanced Alignment Summary Table
+    st.subheader("📋 Alignment Summary")
+    
+    alignment_data = []
+    for clo_code, clo_data in results['clo_results'].items():
+        related_plos = matrix['clo_to_plo'].get(clo_code, [])
+        related_ylos = []
+        for plo in related_plos:
+            related_ylos.extend(matrix['plo_to_ylo'].get(plo, []))
+        
+        ai_status = "🤖 AI" if clo_data.get('ai_enhanced') else "📊 Rule"
+        confidence = f"{clo_data.get('confidence', 0.8)*100:.0f}%"
+        
+        alignment_data.append({
+            'CLO': clo_code,
+            'Score': f"{clo_data['score']:.1f}%",
+            'Confidence': confidence,
+            'Analysis': ai_status,
+            'Related PLOs': ', '.join(related_plos),
+            'Related YLOs': ', '.join(set(related_ylos))
+        })
+    
+    if alignment_data:
+        alignment_df = pd.DataFrame(alignment_data)
+        st.dataframe(alignment_df, use_container_width=True)
+
+def display_comprehensive_interpretation(results):
+    """Display comprehensive interpretation of all assessment results"""
+    st.subheader("📊 การแปลผลการประเมินโดยรวม")
+    
+    # Overview metrics
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        clo_avg = results['overall_scores']['clo_average']
+        st.metric("CLO Average", f"{clo_avg:.1f}%", 
+                 f"{clo_avg-70:.1f}%" if clo_avg >= 70 else f"{clo_avg-70:.1f}%")
+    
+    with col2:
+        plo_avg = results['overall_scores']['plo_average']
+        st.metric("PLO Average", f"{plo_avg:.1f}%",
+                 f"{plo_avg-70:.1f}%" if plo_avg >= 70 else f"{plo_avg-70:.1f}%")
+    
+    with col3:
+        ylo_avg = results['overall_scores']['ylo_average']
+        st.metric("YLO Average", f"{ylo_avg:.1f}%",
+                 f"{ylo_avg-70:.1f}%" if ylo_avg >= 70 else f"{ylo_avg-70:.1f}%")
+    
+    with col4:
+        confidence = results['overall_scores'].get('overall_confidence', 0.8)
+        st.metric("AI Confidence", f"{confidence*100:.0f}%")
+    
+    st.markdown("---")
+    
+    # Detailed interpretation
+    st.markdown("### 🎯 การวิเคราะห์ความสัมพันธ์ CLO → PLO → YLO")
+    
+    # Create interpretation table
+    interpretation_data = []
+    
+    for clo_code, clo_data in results['clo_results'].items():
+        # Get related PLOs and YLOs
+        related_plos = results['alignment_matrix']['clo_to_plo'].get(clo_code, [])
+        related_ylos = []
+        for plo in related_plos:
+            related_ylos.extend(results['alignment_matrix']['plo_to_ylo'].get(plo, []))
+        
+        interpretation_data.append({
+            'CLO': clo_code,
+            'คะแนน': f"{clo_data['score']:.1f}%",
+            'ความมั่นใจ': f"{clo_data.get('confidence', 0.8)*100:.0f}%",
+            'การวิเคราะห์': "🤖 AI" if clo_data.get('ai_enhanced') else "📊 Rule",
+            'PLO ที่เชื่อมโยง': ', '.join(related_plos),
+            'YLO ที่สนับสนุน': ', '.join(set(related_ylos))
+        })
+    
+    interpretation_df = pd.DataFrame(interpretation_data)
+    st.dataframe(interpretation_df, use_container_width=True, hide_index=True)
+    
+    # Generate comprehensive recommendations
+    st.markdown("### 💡 ข้อเสนอแนะเชิงลึก")
+    
+    recommendations = []
+    
+    # CLO-based recommendations
+    low_clos = [clo for clo, data in results['clo_results'].items() if data['score'] < 70]
+    if low_clos:
+        recommendations.append({
+            'ประเภท': 'CLO',
+            'ปัญหา': f"CLO ที่ต่ำกว่าเกณฑ์: {', '.join(low_clos)}",
+            'แนวทางแก้ไข': 'เพิ่มเนื้อหาและคำสำคัญที่สอดคล้องกับวัตถุประสงค์'
+        })
+    
+    # PLO coverage recommendations
+    missing_plos = [plo for plo in ['PLO1', 'PLO2', 'PLO3'] if plo not in results['plo_results']]
+    if missing_plos:
+        plo_descriptions = {
+            'PLO1': 'เทคโนโลยีและการมีส่วนร่วม',
+            'PLO2': 'การวิจัยและการบูรณาการ',
+            'PLO3': 'การสื่อสารและการถ่ายทอด'
+        }
+        for plo in missing_plos:
+            recommendations.append({
+                'ประเภท': 'PLO',
+                'ปัญหา': f"ขาด {plo}: {plo_descriptions[plo]}",
+                'แนวทางแก้ไข': f'เพิ่มเนื้อหาด้าน{plo_descriptions[plo]}'
+            })
+    
+    if recommendations:
+        rec_df = pd.DataFrame(recommendations)
+        st.dataframe(rec_df, use_container_width=True, hide_index=True)
+    else:
+        st.success("✅ เนื้อหามีความสมดุลและครอบคลุมดีแล้ว")
+
 # Additional helper functions (keeping existing implementations)
 def generate_improvement_recommendations(results):
+    """Generate specific improvement recommendations in Thai"""
+    recommendations = []
+    
+    # CLO-based recommendations
+    clo_scores = [data['score'] for data in results['clo_results'].values()]
+    if clo_scores:
+        avg_clo = sum(clo_scores) / len(clo_scores)
+        if avg_clo < 70:
+            recommendations.append("ปรับปรุงเนื้อหาให้สอดคล้องกับวัตถุประสงค์รายวิชา (CLO) มากขึ้น")
+        elif avg_clo < 80:
+            recommendations.append("เสริมเนื้อหาเพื่อยกระดับความสอดคล้องกับ CLO ให้ถึงระดับดีเยี่ยม")
+    
+    # PLO-based recommendations
+    plo_scores = [data['score'] for data in results['plo_results'].values()]
+    if plo_scores:
+        avg_plo = sum(plo_scores) / len(plo_scores)
+        if avg_plo < 70:
+            recommendations.append("เสริมเนื้อหาให้เชื่อมโยงกับผลการเรียนรู้ของหลักสูตร (PLO) ให้ชัดเจนขึ้น")
+        elif avg_plo < 85:
+            recommendations.append("พัฒนาการเชื่อมโยงระหว่างเนื้อหาและ PLO ให้แข็งแกร่งขึ้น")
+    
+    # YLO-based recommendations
+    ylo_scores = [data['score'] for data in results['ylo_results'].values()]
+    if ylo_scores:
+        avg_ylo = sum(ylo_scores) / len(ylo_scores)
+        if avg_ylo < 70:
+            recommendations.append("ปรับระดับเนื้อหาให้เหมาะสมกับผลการเรียนรู้ระดับชั้นปี (YLO)")
+        elif avg_ylo < 85:
+            recommendations.append("ยกระดับความซับซ้อนของเนื้อหาให้สอดคล้องกับระดับการคิดขั้นสูง")
+    
+    # Specific content recommendations based on CLO scores
+    low_clos = [clo for clo, data in results['clo_results'].items() if data['score'] < 70]
+    if low_clos:
+        recommendations.append(f"เพิ่มเนื้อหาและกิจกรรมที่เกี่ยวข้องกับ {', '.join(low_clos)}")
+    
+    # Enhanced recommendations with Assessment ID
+    assessment_id = results.get('assessment_id', 'Unknown')
+    if assessment_id != 'Unknown':
+        recommendations.append(f"บันทึกการปรับปรุงภายใต้ Assessment ID: {assessment_id}")
+    
+    # AI-specific recommendations
+    if results.get('ai_enhanced'):
+        low_confidence_clos = [clo for clo, data in results['clo_results'].items() if data.get('confidence', 1) < 0.8]
+        if low_confidence_clos:
+            recommendations.append(f"ปรับปรุงความชัดเจนและความลึกของเนื้อหาใน {', '.join(low_confidence_clos)}")
+        
+        # High-level AI recommendations
+        overall_confidence = results['overall_scores'].get('overall_confidence', 0)
+        if overall_confidence > 0.95:
+            recommendations.append("เนื้อหามีคุณภาพสูงมาก แนะนำให้พัฒนาเป็นต้นแบบหรือกรณีศึกษา")
+        elif overall_confidence > 0.90:
+            recommendations.append("เนื้อหาอยู่ในระดับดี แนะนำให้เพิ่มความลึกและการประยุกต์ใช้จริง")
+    
+    # Course-specific recommendations
+    course_code = results.get('course_code', '')
+    if '282712' in course_code:  # Water resource course
+        recommendations.append("เพิ่มกรณีศึกษาการจัดการน้ำในบริบทไทยและอาเซียน")
+    elif '282714' in course_code:  # Research methodology
+        recommendations.append("เสริมเทคนิคการวิจัยสมัยใหม่และการใช้เครื่องมือดิจิทัล")
+    elif '282734' in course_code:  # Communication
+        recommendations.append("พัฒนาทักษะการสื่อสารแบบสื่อผสมและแพลตฟอร์มดิจิทัล")
+    
+    # General enhancement recommendations
+    if not recommendations:
+        recommendations.append("เนื้อหามีความสอดคล้องในระดับดีมาก ควรรักษาคุณภาพและนำไปเป็นแบบอย่าง")
+        recommendations.append("พิจารณาการพัฒนาเป็นเนื้อหาขั้นสูงหรือการวิจัยเชิงลึก")
+    
+    return recommendations[:6]  # Limit to top 6 recommendations
     """Generate specific improvement recommendations in Thai"""
     recommendations = []
     
