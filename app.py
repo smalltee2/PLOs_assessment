@@ -2963,22 +2963,7 @@ def main():
         **Required Google APIs:**
         - Google Sheets API
         - Google Drive API
-        
-        **secrets.toml structure:**
-        ```
-        [gcp_service_account]
-        type = "service_account"
-        project_id = "your-project-id"
-        private_key_id = "your-key-id"
-        private_key = "-----BEGIN PRIVATE KEY-----\\nyour-private-key\\n-----END PRIVATE KEY-----"
-        client_email = "your-service-account@project.iam.gserviceaccount.com"
-        client_id = "your-client-id"
-        auth_uri = "https://accounts.google.com/o/oauth2/auth"
-        token_uri = "https://oauth2.googleapis.com/token"
-        auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-        client_x509_cert_url = "your-cert-url"
-        universe_domain = "googleapis.com"
-        ```
+
         
         **Support:**
         หากพบปัญหาการใช้งาน โปรดติดต่อผู้ดูแลระบบ
