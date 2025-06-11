@@ -27,9 +27,6 @@ GOOGLE_SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Target spreadsheet name
-TARGET_SPREADSHEET_NAME = "PLO_Assessment"
-
 # Course Descriptions with 4 CLOs each
 COURSE_DESCRIPTIONS = {
     '282711': {
@@ -122,6 +119,7 @@ COURSE_DESCRIPTIONS = {
         'plo_mapping': ['PLO1', 'PLO2'],
         'ylo_mapping': ['YLO1.1', 'YLO2.1']
     },
+    # เพิ่มรายวิชาเลือก
     '282721': {
         'name': 'การประเมินความเสี่ยงทางภูมิอากาศและผลกระทบทางสิ่งแวดล้อม',
         'description': 'หลักการประเมินความเสี่ยงและผลกระทบสิ่งแวดล้อม วิธีการประเมินความเสี่ยงทางภูมิอากาศ การสร้างแบบจำลองต้นแบบ การประเมินผลกระทบ',
@@ -438,64 +436,45 @@ def check_duplicate_assessment(spreadsheet, content_hash, course_code):
 # Google Sheets Manager Class with Enhanced Unique Recording
 if GSHEETS_AVAILABLE:
     class GoogleSheetsManager:
-        """Enhanced Google Sheets Manager with automatic connection"""
+        """Enhanced Google Sheets Manager with unique recording and duplicate checking"""
         
         def __init__(self):
             self.client = None
             self.initialized = False
-            self.spreadsheet = None
-            self.error_message = None
-            # Don't auto-initialize in __init__ to avoid st.secrets error
         
-        def auto_initialize(self):
-            """Automatically initialize connection and set up spreadsheet"""
+        def initialize_connection(self, credentials_dict):
+            """Initialize Google Sheets connection"""
             try:
-                # Get service account info from Streamlit secrets
-                service_account_info = None
-                
-                # Try to access secrets
-                if hasattr(st, 'secrets'):
-                    if "gcp_service_account" in st.secrets:
-                        service_account_info = dict(st.secrets["gcp_service_account"])
-                    else:
-                        self.error_message = "Service account not found in secrets. Please add [gcp_service_account] to secrets.toml"
-                        return False
-                else:
-                    self.error_message = "Streamlit secrets not available"
-                    return False
-                
-                if not service_account_info:
-                    self.error_message = "Service account credentials are empty"
-                    return False
-                
-                # Create credentials from service account info in secrets
+                # Create credentials from dictionary
                 credentials = Credentials.from_service_account_info(
-                    service_account_info, scopes=GOOGLE_SHEETS_SCOPES
+                    credentials_dict, scopes=GOOGLE_SHEETS_SCOPES
                 )
                 
                 # Initialize gspread client
                 self.client = gspread.authorize(credentials)
                 self.initialized = True
-                
-                # Try to open or create the target spreadsheet
-                try:
-                    self.spreadsheet = self.client.open(TARGET_SPREADSHEET_NAME)
-                except gspread.SpreadsheetNotFound:
-                    # Create new spreadsheet
-                    self.spreadsheet = self.client.create(TARGET_SPREADSHEET_NAME)
-                    # Optionally share with specific email
-                    # self.spreadsheet.share('your-email@gmail.com', perm_type='user', role='writer')
-                
-                # Setup sheets structure
-                self.setup_assessment_sheets(self.spreadsheet)
-                
-                return True
+                return True, "เชื่อมต่อ Google Sheets สำเร็จ"
                 
             except Exception as e:
-                # Store error message for later display
-                self.error_message = str(e)
-                print(f"Failed to auto-initialize Google Sheets: {str(e)}")
-                return False
+                return False, f"เกิดข้อผิดพลาดในการเชื่อมต่อ: {str(e)}"
+        
+        def create_or_get_spreadsheet(self, spreadsheet_name):
+            """Create new spreadsheet or get existing one"""
+            if not self.initialized:
+                return None, "ยังไม่ได้เชื่อมต่อ Google Sheets"
+            
+            try:
+                # Try to open existing spreadsheet
+                try:
+                    spreadsheet = self.client.open(spreadsheet_name)
+                    return spreadsheet, f"เปิด spreadsheet '{spreadsheet_name}' สำเร็จ"
+                except gspread.SpreadsheetNotFound:
+                    # Create new spreadsheet
+                    spreadsheet = self.client.create(spreadsheet_name)
+                    return spreadsheet, f"สร้าง spreadsheet '{spreadsheet_name}' สำเร็จ"
+                    
+            except Exception as e:
+                return None, f"เกิดข้อผิดพลาด: {str(e)}"
         
         def setup_assessment_sheets(self, spreadsheet):
             """Setup sheets for assessment data with enhanced structure"""
@@ -538,6 +517,8 @@ if GSHEETS_AVAILABLE:
                     ]
                 }
                 
+                created_sheets = []
+                
                 for sheet_name, headers in sheets_config.items():
                     try:
                         # Check if sheet exists
@@ -548,6 +529,9 @@ if GSHEETS_AVAILABLE:
                             if current_headers != headers:
                                 worksheet.clear()
                                 worksheet.append_row(headers)
+                                created_sheets.append(f"อัพเดตโครงสร้าง {sheet_name}")
+                            else:
+                                created_sheets.append(f"ตรวจสอบ {sheet_name} ✓")
                         except gspread.WorksheetNotFound:
                             # Create new sheet
                             worksheet = spreadsheet.add_worksheet(
@@ -556,29 +540,28 @@ if GSHEETS_AVAILABLE:
                                 cols=len(headers)
                             )
                             worksheet.append_row(headers)
+                            created_sheets.append(f"สร้างใหม่ {sheet_name}")
                             
                     except Exception as e:
-                        continue
+                        return False, f"เกิดข้อผิดพลาดในการสร้าง sheet '{sheet_name}': {str(e)}"
                 
                 # Remove default Sheet1 if exists and is empty
                 try:
                     sheet1 = spreadsheet.worksheet('Sheet1')
                     if len(sheet1.get_all_values()) <= 1:  # Only header or empty
                         spreadsheet.del_worksheet(sheet1)
+                        created_sheets.append("ลบ Sheet1 เริ่มต้น")
                 except:
                     pass
                 
-                return True
+                return True, f"ตั้งค่า sheets สำเร็จ: {', '.join(created_sheets)}"
                 
             except Exception as e:
-                return False
+                return False, f"เกิดข้อผิดพลาดในการตั้งค่า sheets: {str(e)}"
         
-        def save_assessment_data(self, assessment_data, file_info=None, allow_duplicates=False):
+        def save_assessment_data(self, spreadsheet, assessment_data, file_info=None, allow_duplicates=False):
             """Enhanced save assessment results with unique ID and duplicate checking"""
             try:
-                if not self.initialized or not self.spreadsheet:
-                    return False, "Google Sheets not initialized"
-                
                 # Generate unique assessment ID
                 unique_assessment_id = generate_unique_assessment_id()
                 assessment_data['assessment_id'] = unique_assessment_id
@@ -592,8 +575,15 @@ if GSHEETS_AVAILABLE:
                 
                 if not allow_duplicates and content_hash:
                     is_duplicate, original_assessment_id = check_duplicate_assessment(
-                        self.spreadsheet, content_hash, course_code
+                        spreadsheet, content_hash, course_code
                     )
+                    
+                    if is_duplicate:
+                        st.warning(f"⚠️ พบการประเมินซ้ำกับ ID: {original_assessment_id}")
+                        # Simple confirmation without using st.confirm which might not exist
+                        continue_save = st.button("บันทึกต่อไปอย่างไรก็ตาม", key="confirm_duplicate")
+                        if not continue_save:
+                            return False, "ยกเลิกการบันทึกเนื่องจากข้อมูลซ้ำ"
                 
                 # Create timestamp
                 current_time = datetime.now()
@@ -602,7 +592,7 @@ if GSHEETS_AVAILABLE:
                 timestamp_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
                 
                 # 1. Save to Assessment_Summary with enhanced info
-                summary_sheet = self.spreadsheet.worksheet('Assessment_Summary')
+                summary_sheet = spreadsheet.worksheet('Assessment_Summary')
                 
                 summary_row = [
                     date_str,  # วันที่
@@ -637,7 +627,7 @@ if GSHEETS_AVAILABLE:
                 summary_sheet.append_row(summary_row)
                 
                 # 2. Save CLO Details with timestamp
-                clo_sheet = self.spreadsheet.worksheet('CLO_Details')
+                clo_sheet = spreadsheet.worksheet('CLO_Details')
                 for clo_code, clo_data in assessment_data['clo_results'].items():
                     clo_row = [
                         unique_assessment_id,
@@ -656,7 +646,7 @@ if GSHEETS_AVAILABLE:
                     clo_sheet.append_row(clo_row)
                 
                 # 3. Save PLO Details with timestamp
-                plo_sheet = self.spreadsheet.worksheet('PLO_Details')
+                plo_sheet = spreadsheet.worksheet('PLO_Details')
                 for plo_code, plo_data in assessment_data['plo_results'].items():
                     plo_row = [
                         unique_assessment_id,
@@ -672,7 +662,7 @@ if GSHEETS_AVAILABLE:
                     plo_sheet.append_row(plo_row)
                 
                 # 4. Save YLO Details with timestamp
-                ylo_sheet = self.spreadsheet.worksheet('YLO_Details')
+                ylo_sheet = spreadsheet.worksheet('YLO_Details')
                 for ylo_code, ylo_data in assessment_data['ylo_results'].items():
                     ylo_row = [
                         unique_assessment_id,
@@ -690,7 +680,7 @@ if GSHEETS_AVAILABLE:
                     ylo_sheet.append_row(ylo_row)
                 
                 # 5. Save Enhanced Content Analysis
-                content_sheet = self.spreadsheet.worksheet('Content_Analysis')
+                content_sheet = spreadsheet.worksheet('Content_Analysis')
                 content_row = [
                     unique_assessment_id,
                     assessment_data['course_code'],
@@ -707,7 +697,7 @@ if GSHEETS_AVAILABLE:
                 
                 # 6. Save interpretation data
                 interpretation_success, interpretation_message = self.save_interpretation_data(
-                    self.spreadsheet, assessment_data
+                    spreadsheet, assessment_data
                 )
                 
                 if not interpretation_success:
@@ -715,14 +705,14 @@ if GSHEETS_AVAILABLE:
                     print(f"Warning: {interpretation_message}")
                 
                 # Success message with unique ID
-                success_msg = f"✅ Auto-saved to Google Sheets - ID: {unique_assessment_id}"
+                success_msg = f"✅ บันทึกการประเมินใหม่สำเร็จ - ID: {unique_assessment_id}"
                 if is_duplicate:
-                    success_msg += f" (Duplicate of {original_assessment_id})"
+                    success_msg += f" (มีข้อมูลซ้ำกับ {original_assessment_id})"
                 
                 return True, success_msg
                 
             except Exception as e:
-                return False, f"Error saving to Google Sheets: {str(e)}"
+                return False, f"เกิดข้อผิดพลาดในการบันทึกข้อมูล: {str(e)}"
         
         def save_interpretation_data(self, spreadsheet, assessment_data):
             """Save interpretation data to Google Sheets"""
@@ -894,13 +884,10 @@ if GSHEETS_AVAILABLE:
             
             return interpretation
         
-        def get_assessment_history(self, course_code=None, limit=50):
+        def get_assessment_history(self, spreadsheet, course_code=None, limit=50):
             """Get assessment history from Google Sheets"""
             try:
-                if not self.initialized or not self.spreadsheet:
-                    return [], "Google Sheets not initialized"
-                
-                summary_sheet = self.spreadsheet.worksheet('Assessment_Summary')
+                summary_sheet = spreadsheet.worksheet('Assessment_Summary')
                 all_records = summary_sheet.get_all_records()
                 
                 # Filter by course code if specified
@@ -921,13 +908,10 @@ if GSHEETS_AVAILABLE:
             except Exception as e:
                 return [], f"เกิดข้อผิดพลาดในการดึงข้อมูล: {str(e)}"
         
-        def get_course_analytics(self, course_code):
+        def get_course_analytics(self, spreadsheet, course_code):
             """Get analytics for specific course"""
             try:
-                if not self.initialized or not self.spreadsheet:
-                    return None, "Google Sheets not initialized"
-                
-                summary_sheet = self.spreadsheet.worksheet('Assessment_Summary')
+                summary_sheet = spreadsheet.worksheet('Assessment_Summary')
                 all_records = summary_sheet.get_all_records()
                 
                 # Filter for the course
@@ -954,9 +938,100 @@ if GSHEETS_AVAILABLE:
                 
             except Exception as e:
                 return None, f"เกิดข้อผิดพลาด: {str(e)}"
-
-# Global Google Sheets manager (will be initialized in main)
-sheets_manager = None
+        
+        def get_interpretation_history(self, spreadsheet, course_code=None, limit=20):
+            """Get interpretation history from Google Sheets"""
+            try:
+                interpretation_sheet = spreadsheet.worksheet('Interpretation')
+                all_records = interpretation_sheet.get_all_records()
+                
+                # Filter by course code if specified
+                if course_code:
+                    filtered_records = [r for r in all_records if r.get('รหัสวิชา') == course_code]
+                else:
+                    filtered_records = all_records
+                
+                # Sort by date descending
+                sorted_records = sorted(
+                    filtered_records, 
+                    key=lambda x: x.get('วันที่', ''), 
+                    reverse=True
+                )[:limit]
+                
+                return sorted_records, f"ดึงข้อมูลการแปลผล {len(sorted_records)} รายการ"
+                
+            except Exception as e:
+                return [], f"เกิดข้อผิดพลาดในการดึงข้อมูล: {str(e)}"
+        
+        def get_interpretation_summary(self, spreadsheet, course_code=None):
+            """Get summary of interpretations for analytics"""
+            try:
+                interpretation_sheet = spreadsheet.worksheet('Interpretation')
+                all_records = interpretation_sheet.get_all_records()
+                
+                # Filter by course code if specified
+                if course_code:
+                    records = [r for r in all_records if r.get('รหัสวิชา') == course_code]
+                else:
+                    records = all_records
+                
+                if not records:
+                    return None, "ไม่พบข้อมูลการแปลผล"
+                
+                # Calculate summary statistics
+                summary = {
+                    'total_interpretations': len(records),
+                    'result_distribution': {
+                        'ดีเยี่ยม': 0,
+                        'ดี': 0,
+                        'ควรปรับปรุง': 0,
+                        'ต้องปรับปรุงมาก': 0
+                    },
+                    'common_strengths': {},
+                    'common_weaknesses': {},
+                    'common_recommendations': {},
+                    'average_plo_coverage': 0,
+                    'cognitive_level_stats': {}
+                }
+                
+                # Count result distribution
+                for record in records:
+                    result = record.get('ผลการประเมินโดยรวม', '')
+                    if result in summary['result_distribution']:
+                        summary['result_distribution'][result] += 1
+                
+                # Analyze common patterns
+                for record in records:
+                    # Count strengths
+                    for i in range(1, 4):
+                        strength = record.get(f'จุดเด่น_{i}', '').strip()
+                        if strength:
+                            summary['common_strengths'][strength] = summary['common_strengths'].get(strength, 0) + 1
+                    
+                    # Count weaknesses
+                    for i in range(1, 4):
+                        weakness = record.get(f'จุดที่ควรปรับปรุง_{i}', '').strip()
+                        if weakness:
+                            summary['common_weaknesses'][weakness] = summary['common_weaknesses'].get(weakness, 0) + 1
+                    
+                    # Count recommendations
+                    for i in range(1, 4):
+                        rec = record.get(f'คำแนะนำเชิงลึก_{i}', '').strip()
+                        if rec:
+                            summary['common_recommendations'][rec] = summary['common_recommendations'].get(rec, 0) + 1
+                
+                # Sort by frequency
+                summary['common_strengths'] = dict(sorted(summary['common_strengths'].items(), 
+                                                          key=lambda x: x[1], reverse=True)[:5])
+                summary['common_weaknesses'] = dict(sorted(summary['common_weaknesses'].items(), 
+                                                           key=lambda x: x[1], reverse=True)[:5])
+                summary['common_recommendations'] = dict(sorted(summary['common_recommendations'].items(), 
+                                                               key=lambda x: x[1], reverse=True)[:5])
+                
+                return summary, "สรุปข้อมูลการแปลผลสำเร็จ"
+                
+            except Exception as e:
+                return None, f"เกิดข้อผิดพลาด: {str(e)}"
 
 # AI and File Processing Functions
 def check_ai_availability():
@@ -1436,41 +1511,620 @@ class MultiLevelAssessmentEngine:
         
         return matrix
 
-# Enhanced Auto-save function
-def auto_save_to_sheets(results, file_info=None):
-    """Automatically save assessment results to Google Sheets"""
-    if GSHEETS_AVAILABLE and sheets_manager and sheets_manager.initialized:
-        try:
-            # Add assessor info
-            assessor_name = st.session_state.get('assessor_name', 'ไม่ระบุ')
-            results['assessor'] = assessor_name
+# Enhanced Google Sheets Interface Functions
+def show_google_sheets_setup():
+    """Show enhanced Google Sheets setup interface"""
+    if not GSHEETS_AVAILABLE:
+        st.error("Google Sheets integration is not available. Please install required packages.")
+        return
+    
+    st.subheader("📊 การตั้งค่า Google Sheets (Enhanced Version)")
+    
+    # Initialize sheets manager in session state
+    if 'sheets_manager' not in st.session_state:
+        st.session_state.sheets_manager = GoogleSheetsManager()
+    
+    # Connection status with enhanced info
+    if st.session_state.sheets_manager.initialized:
+        st.success("✅ เชื่อมต่อ Google Sheets สำเร็จแล้ว - พร้อมบันทึกข้อมูลใหม่ทุกครั้ง")
+        st.info("ℹ️ ระบบจะสร้าง Assessment ID ใหม่และตรวจสอบข้อมูลซ้ำอัตโนมัติ")
+    else:
+        st.info("ℹ️ ยังไม่ได้เชื่อมต่อ Google Sheets")
+    
+    # Credentials input
+    with st.expander("🔑 ตั้งค่า Service Account Credentials"):
+        st.markdown("""
+        **วิธีการสร้าง Service Account (ปรับปรุงใหม่):**
+        1. ไปที่ [Google Cloud Console](https://console.cloud.google.com/)
+        2. สร้าง Project ใหม่หรือเลือกที่มีอยู่
+        3. เปิดใช้งาน Google Sheets API และ Google Drive API
+        4. สร้าง Service Account และดาวน์โหลด JSON credentials
+        5. แชร์ Google Sheets ของคุณให้กับ Service Account email
+        6. **สำคัญ**: ให้สิทธิ์ Editor เพื่อให้สามารถเขียนข้อมูลได้
+        """)
+        
+        # Option 1: Upload JSON file
+        uploaded_creds = st.file_uploader(
+            "อัพโหลดไฟล์ Service Account JSON",
+            type=['json'],
+            help="ไฟล์ credentials ที่ดาวน์โหลดจาก Google Cloud Console"
+        )
+        
+        # Option 2: Paste JSON content
+        st.markdown("**หรือ** วาง JSON content:")
+        creds_text = st.text_area(
+            "Service Account JSON",
+            height=200,
+            placeholder='{\n  "type": "service_account",\n  "project_id": "your-project",\n  ...\n}',
+            help="วาง JSON content ของ Service Account credentials"
+        )
+        
+        # Connect button
+        if st.button("🔗 เชื่อมต่อ Google Sheets", type="primary"):
+            credentials_dict = None
             
-            # Save with enhanced features
-            success, message = sheets_manager.save_assessment_data(
-                results,
-                file_info,
-                allow_duplicates=False  # Check for duplicates
+            try:
+                if uploaded_creds:
+                    credentials_dict = json.load(uploaded_creds)
+                elif creds_text.strip():
+                    credentials_dict = json.loads(creds_text.strip())
+                else:
+                    st.error("กรุณาระบุ credentials")
+                    return
+                
+                # Try to connect
+                success, message = st.session_state.sheets_manager.initialize_connection(credentials_dict)
+                
+                if success:
+                    st.success(message)
+                    st.rerun()
+                else:
+                    st.error(message)
+                    
+            except json.JSONDecodeError:
+                st.error("รูปแบบ JSON ไม่ถูกต้อง")
+            except Exception as e:
+                st.error(f"เกิดข้อผิดพลาด: {str(e)}")
+    
+    # Enhanced Spreadsheet management
+    if st.session_state.sheets_manager.initialized:
+        st.markdown("---")
+        st.subheader("📋 จัดการ Spreadsheet (Enhanced)")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            spreadsheet_name = st.text_input(
+                "ชื่อ Spreadsheet",
+                value="Enhanced_Assessment_Results",
+                help="ชื่อของ Google Spreadsheet ที่จะใช้เก็บข้อมูล (ปรับปรุงใหม่)"
+            )
+        
+        with col2:
+            if st.button("📊 สร้าง/เปิด Spreadsheet", use_container_width=True):
+                spreadsheet, message = st.session_state.sheets_manager.create_or_get_spreadsheet(spreadsheet_name)
+                
+                if spreadsheet:
+                    st.session_state.current_spreadsheet = spreadsheet
+                    st.success(message)
+                    
+                    # Setup enhanced sheets structure
+                    setup_success, setup_message = st.session_state.sheets_manager.setup_assessment_sheets(spreadsheet)
+                    if setup_success:
+                        st.success("✅ " + setup_message)
+                        st.info(f"📊 Spreadsheet URL: {spreadsheet.url}")
+                        st.success("🆕 ระบบพร้อมบันทึกข้อมูลใหม่ทุกครั้งพร้อม Unique ID")
+                    else:
+                        st.warning(setup_message)
+                else:
+                    st.error(message)
+        
+        # Current spreadsheet info with enhanced details
+        if hasattr(st.session_state, 'current_spreadsheet'):
+            st.success(f"📊 กำลังใช้งาน: {st.session_state.current_spreadsheet.title}")
+            st.markdown(f"🔗 [เปิดใน Google Sheets]({st.session_state.current_spreadsheet.url})")
+            
+            # Show enhanced features
+            with st.expander("✨ ฟีเจอร์ใหม่ในระบบ Enhanced"):
+                st.markdown("""
+                **🆕 การปรับปรุงใหม่:**
+                - ✅ Unique Assessment ID: สร้าง ID ไม่ซ้ำทุกครั้ง
+                - ✅ Duplicate Detection: ตรวจสอบข้อมูลซ้ำอัตโนมัติ
+                - ✅ Enhanced Timestamps: บันทึกเวลาแม่นยำ
+                - ✅ Content Hash: ตรวจสอบเนื้อหาด้วย Hash
+                - ✅ Improved Data Structure: โครงสร้างข้อมูลที่ดีขึ้น
+                - ✅ Better Analytics: วิเคราะห์ข้อมูลที่ละเอียดขึ้น
+                
+                **📊 Sheets ที่ปรับปรุง:**
+                - Assessment_Summary: เพิ่ม Content_Hash, Unique_Assessment
+                - CLO_Details: เพิ่ม Timestamp_Created
+                - PLO_Details: เพิ่ม Timestamp_Created  
+                - YLO_Details: เพิ่ม Timestamp_Created
+                - Content_Analysis: เพิ่ม Is_Duplicate, Original_Assessment_ID
+                - Interpretation: โครงสร้างครบถ้วนสำหรับการแปลผล
+                """)
+
+def show_assessment_history():
+    """Show enhanced assessment history from Google Sheets"""
+    if not GSHEETS_AVAILABLE:
+        st.warning("Google Sheets integration is not available.")
+        return
+    
+    st.subheader("📋 ประวัติการประเมิน (Enhanced)")
+    
+    if not hasattr(st.session_state, 'current_spreadsheet'):
+        st.warning("กรุณาตั้งค่าและเชื่อมต่อ Google Sheets ก่อน")
+        return
+    
+    # Enhanced filter options
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        filter_course = st.selectbox(
+            "กรองตามรายวิชา",
+            options=['ทั้งหมด'] + list(COURSE_DESCRIPTIONS.keys()),
+            index=0
+        )
+    
+    with col2:
+        limit_records = st.number_input(
+            "จำนวนรายการ",
+            min_value=10,
+            max_value=200,
+            value=50,
+            step=10
+        )
+    
+    with col3:
+        show_unique_only = st.checkbox(
+            "แสดงเฉพาะข้อมูลไม่ซ้ำ",
+            value=False,
+            help="แสดงเฉพาะการประเมินที่ไม่ซ้ำกัน"
+        )
+    
+    with col4:
+        if st.button("🔄 รีเฟรชข้อมูล"):
+            st.rerun()
+    
+    # Get enhanced assessment history
+    course_filter = None if filter_course == 'ทั้งหมด' else filter_course
+    
+    try:
+        history, message = st.session_state.sheets_manager.get_assessment_history(
+            st.session_state.current_spreadsheet,
+            course_code=course_filter,
+            limit=limit_records
+        )
+        
+        if history:
+            st.success(message)
+            
+            # Filter unique only if requested
+            if show_unique_only:
+                history = [r for r in history if r.get('Unique_Assessment', True)]
+                st.info(f"แสดง {len(history)} รายการที่ไม่ซ้ำกัน")
+            
+            # Display enhanced metrics
+            if history:
+                col1, col2, col3, col4 = st.columns(4)
+                
+                with col1:
+                    total_assessments = len(history)
+                    st.metric("การประเมินทั้งหมด", total_assessments)
+                
+                with col2:
+                    unique_count = sum(1 for r in history if r.get('Unique_Assessment', True))
+                    st.metric("ข้อมูลไม่ซ้ำ", unique_count)
+                
+                with col3:
+                    ai_count = sum(1 for r in history if r.get('AI_Enhanced', False))
+                    st.metric("ใช้ AI", ai_count)
+                
+                with col4:
+                    avg_clo = sum(r.get('CLO_Average', 0) for r in history) / len(history) if history else 0
+                    st.metric("CLO เฉลี่ย", f"{avg_clo:.1f}%")
+            
+            # Display as enhanced dataframe
+            df = pd.DataFrame(history)
+            
+            # Select relevant columns for display with enhanced info
+            display_columns = [
+                'วันที่', 'เวลา', 'รหัสการประเมิน', 'รหัสวิชา', 'ชื่อวิชา',
+                'ประเภทไฟล์', 'AI_Enhanced', 'CLO_Average', 'PLO_Average', 'YLO_Average',
+                'Unique_Assessment', 'Content_Hash'
+            ]
+            
+            available_columns = [col for col in display_columns if col in df.columns]
+            
+            if available_columns:
+                # Enhanced display with color coding
+                display_df = df[available_columns].copy()
+                
+                # Add status indicators
+                if 'Unique_Assessment' in display_df.columns:
+                    display_df['สถานะ'] = display_df['Unique_Assessment'].apply(
+                        lambda x: '✅ ไม่ซ้ำ' if x else '⚠️ ซ้ำ'
+                    )
+                
+                st.dataframe(
+                    display_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                # Enhanced download options
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 ดาวน์โหลด CSV (ทั้งหมด)",
+                        data=csv,
+                        file_name=f"assessment_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                        mime="text/csv"
+                    )
+                
+                with col2:
+                    if show_unique_only and len(history) > 0:
+                        unique_csv = pd.DataFrame([r for r in history if r.get('Unique_Assessment', True)]).to_csv(index=False)
+                        st.download_button(
+                            label="📥 ดาวน์โหลด CSV (ไม่ซ้ำ)",
+                            data=unique_csv,
+                            file_name=f"unique_assessments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+            else:
+                st.warning("ไม่พบคอลัมน์ข้อมูลที่ต้องการแสดง")
+        else:
+            st.info(message)
+            
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล: {str(e)}")
+
+def show_course_analytics():
+    """Show enhanced analytics for courses"""
+    if not GSHEETS_AVAILABLE:
+        st.warning("Google Sheets integration is not available.")
+        return
+    
+    st.subheader("📈 การวิเคราะห์ข้อมูลรายวิชา (Enhanced)")
+    
+    if not hasattr(st.session_state, 'current_spreadsheet'):
+        st.warning("กรุณาตั้งค่าและเชื่อมต่อ Google Sheets ก่อน")
+        return
+    
+    # Course selection
+    selected_course = st.selectbox(
+        "เลือกรายวิชาสำหรับวิเคราะห์",
+        options=list(COURSE_DESCRIPTIONS.keys()),
+        format_func=lambda x: f"{x} - {COURSE_DESCRIPTIONS[x]['name']}"
+    )
+    
+    if st.button("📊 วิเคราะห์ข้อมูล (Enhanced)"):
+        try:
+            analytics, message = st.session_state.sheets_manager.get_course_analytics(
+                st.session_state.current_spreadsheet,
+                selected_course
             )
             
-            if success:
-                st.success(f"💾 {message}")
-                # Show spreadsheet link
-                if sheets_manager.spreadsheet:
-                    st.info(f"📊 View in Google Sheets: {sheets_manager.spreadsheet.url}")
-            else:
-                st.warning(f"⚠️ {message}")
+            if analytics:
+                st.success(message)
                 
-            return success, message
+                # Display enhanced analytics
+                col1, col2, col3, col4, col5 = st.columns(5)
+                
+                with col1:
+                    st.metric(
+                        "การประเมินทั้งหมด",
+                        analytics['total_assessments']
+                    )
+                
+                with col2:
+                    st.metric(
+                        "ข้อมูลไม่ซ้ำ",
+                        analytics.get('unique_assessments', 0),
+                        f"+{analytics.get('unique_assessments', 0) - analytics.get('duplicate_assessments', 0)}"
+                    )
+                
+                with col3:
+                    st.metric(
+                        "CLO เฉลี่ย",
+                        f"{analytics['avg_clo_score']:.1f}%"
+                    )
+                
+                with col4:
+                    st.metric(
+                        "PLO เฉลี่ย",
+                        f"{analytics['avg_plo_score']:.1f}%"
+                    )
+                
+                with col5:
+                    ai_percentage = (analytics['ai_enhanced_count'] / analytics['total_assessments'] * 100) if analytics['total_assessments'] > 0 else 0
+                    st.metric(
+                        "การใช้ AI",
+                        f"{ai_percentage:.1f}%",
+                        f"{analytics['ai_enhanced_count']}/{analytics['total_assessments']}"
+                    )
+                
+                # Enhanced charts
+                if analytics['recent_assessments']:
+                    st.markdown("### 📊 แนวโน้มคะแนน")
+                    
+                    recent_df = pd.DataFrame(analytics['recent_assessments'])
+                    
+                    # Create trend chart
+                    fig = go.Figure()
+                    
+                    fig.add_trace(go.Scatter(
+                        x=recent_df['วันที่'],
+                        y=recent_df['CLO_Average'],
+                        mode='lines+markers',
+                        name='CLO Average',
+                        line=dict(color='#FF6B6B')
+                    ))
+                    
+                    fig.add_trace(go.Scatter(
+                        x=recent_df['วันที่'],
+                        y=recent_df['PLO_Average'],
+                        mode='lines+markers',
+                        name='PLO Average',
+                        line=dict(color='#4ECDC4')
+                    ))
+                    
+                    fig.add_trace(go.Scatter(
+                        x=recent_df['วันที่'],
+                        y=recent_df['YLO_Average'],
+                        mode='lines+markers',
+                        name='YLO Average',
+                        line=dict(color='#45B7D1')
+                    ))
+                    
+                    fig.update_layout(
+                        title="แนวโน้มคะแนนการประเมิน",
+                        xaxis_title="วันที่",
+                        yaxis_title="คะแนน (%)",
+                        height=400
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                # Recent assessments table
+                st.markdown("### 📅 การประเมินล่าสุด")
+                if analytics['recent_assessments']:
+                    recent_df = pd.DataFrame(analytics['recent_assessments'])
+                    st.dataframe(recent_df, use_container_width=True, hide_index=True)
+                else:
+                    st.info("ไม่มีข้อมูลการประเมินล่าสุด")
+            else:
+                st.warning(message)
+                
         except Exception as e:
-            st.error(f"Error auto-saving: {str(e)}")
-            return False, str(e)
-    else:
-        # Don't show error if Google Sheets is not available, just skip
-        return False, "Google Sheets not available"
+            st.error(f"เกิดข้อผิดพลาด: {str(e)}")
+
+def show_interpretation_history():
+    """Show interpretation history from Google Sheets"""
+    if not GSHEETS_AVAILABLE:
+        st.warning("Google Sheets integration is not available.")
+        return
+    
+    st.subheader("📊 ประวัติการแปลผล")
+    
+    if not hasattr(st.session_state, 'current_spreadsheet'):
+        st.warning("กรุณาตั้งค่าและเชื่อมต่อ Google Sheets ก่อน")
+        return
+    
+    # Filter options
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        filter_course = st.selectbox(
+            "กรองตามรายวิชา",
+            options=['ทั้งหมด'] + list(COURSE_DESCRIPTIONS.keys()),
+            index=0,
+            key="interpretation_filter_course"
+        )
+    
+    with col2:
+        if st.button("🔄 รีเฟรชข้อมูลการแปลผล"):
+            st.rerun()
+    
+    # Get interpretation history
+    course_filter = None if filter_course == 'ทั้งหมด' else filter_course
+    
+    try:
+        history, message = st.session_state.sheets_manager.get_interpretation_history(
+            st.session_state.current_spreadsheet,
+            course_code=course_filter,
+            limit=20
+        )
+        
+        if history:
+            st.success(message)
+            
+            # Display summary cards
+            col1, col2, col3, col4 = st.columns(4)
+            
+            # Count results
+            excellent = sum(1 for r in history if r.get('ผลการประเมินโดยรวม') == 'ดีเยี่ยม')
+            good = sum(1 for r in history if r.get('ผลการประเมินโดยรวม') == 'ดี')
+            fair = sum(1 for r in history if r.get('ผลการประเมินโดยรวม') == 'ควรปรับปรุง')
+            poor = sum(1 for r in history if r.get('ผลการประเมินโดยรวม') == 'ต้องปรับปรุงมาก')
+            
+            with col1:
+                st.metric("🌟 ดีเยี่ยม", excellent)
+            with col2:
+                st.metric("✅ ดี", good)
+            with col3:
+                st.metric("⚠️ ควรปรับปรุง", fair)
+            with col4:
+                st.metric("❌ ต้องปรับปรุง", poor)
+            
+            # Display interpretation details
+            for record in history:
+                with st.expander(f"{record.get('รหัสการประเมิน')} - {record.get('รหัสวิชา')} ({record.get('วันที่')})"):
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        st.write(f"**ผลการประเมิน:** {record.get('ผลการประเมินโดยรวม')} ({record.get('ระดับคะแนน')})")
+                        st.write(f"**CLO ดีที่สุด:** {record.get('CLO_สูงสุด')}")
+                        st.write(f"**CLO ต่ำที่สุด:** {record.get('CLO_ต่ำสุด')}")
+                        st.write(f"**PLO Coverage:** {record.get('PLO_Coverage')}")
+                        
+                        # Strengths
+                        st.write("**จุดเด่น:**")
+                        for i in range(1, 4):
+                            strength = record.get(f'จุดเด่น_{i}', '').strip()
+                            if strength:
+                                st.write(f"• {strength}")
+                    
+                    with col2:
+                        st.write(f"**Year 1 YLOs:** {record.get('YLO_Year1_Count')}")
+                        st.write(f"**Year 2 YLOs:** {record.get('YLO_Year2_Count')}")
+                        st.write(f"**Cognitive Levels:** {record.get('Cognitive_Distribution')}")
+                        
+                        # Weaknesses
+                        st.write("**จุดที่ควรปรับปรุง:**")
+                        for i in range(1, 4):
+                            weakness = record.get(f'จุดที่ควรปรับปรุง_{i}', '').strip()
+                            if weakness:
+                                st.write(f"• {weakness}")
+                    
+                    # Recommendations
+                    st.write("**คำแนะนำเชิงลึก:**")
+                    for i in range(1, 4):
+                        rec = record.get(f'คำแนะนำเชิงลึก_{i}', '').strip()
+                        if rec:
+                            st.write(f"{i}. {rec}")
+        else:
+            st.info(message)
+            
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล: {str(e)}")
+
+def show_interpretation_analytics():
+    """Show analytics of interpretation data"""
+    if not GSHEETS_AVAILABLE:
+        st.warning("Google Sheets integration is not available.")
+        return
+    
+    st.subheader("📈 การวิเคราะห์การแปลผล")
+    
+    if not hasattr(st.session_state, 'current_spreadsheet'):
+        st.warning("กรุณาตั้งค่าและเชื่อมต่อ Google Sheets ก่อน")
+        return
+    
+    # Course selection
+    selected_course = st.selectbox(
+        "เลือกรายวิชาสำหรับวิเคราะห์",
+        options=['ทั้งหมด'] + list(COURSE_DESCRIPTIONS.keys()),
+        format_func=lambda x: x if x == 'ทั้งหมด' else f"{x} - {COURSE_DESCRIPTIONS[x]['name']}",
+        key="interpretation_analytics_course"
+    )
+    
+    course_filter = None if selected_course == 'ทั้งหมด' else selected_course
+    
+    try:
+        summary, message = st.session_state.sheets_manager.get_interpretation_summary(
+            st.session_state.current_spreadsheet,
+            course_code=course_filter
+        )
+        
+        if summary:
+            st.success(message)
+            
+            # Result distribution pie chart
+            st.markdown("### 📊 การกระจายผลการประเมิน")
+            
+            # Create pie chart
+            labels = list(summary['result_distribution'].keys())
+            values = list(summary['result_distribution'].values())
+            colors = ['#00CC00', '#66B2FF', '#FFB366', '#FF6666']
+            
+            fig = go.Figure(data=[go.Pie(
+                labels=labels, 
+                values=values,
+                hole=.3,
+                marker_colors=colors
+            )])
+            
+            fig.update_layout(
+                title="สัดส่วนผลการประเมิน",
+                height=400
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Common patterns
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("### 💪 จุดเด่นที่พบบ่อย")
+                for strength, count in summary['common_strengths'].items():
+                    st.write(f"• {strength} ({count} ครั้ง)")
+            
+            with col2:
+                st.markdown("### ⚠️ จุดอ่อนที่พบบ่อย")
+                for weakness, count in summary['common_weaknesses'].items():
+                    st.write(f"• {weakness} ({count} ครั้ง)")
+            
+            with col3:
+                st.markdown("### 💡 คำแนะนำที่พบบ่อย")
+                for rec, count in summary['common_recommendations'].items():
+                    st.write(f"• {rec} ({count} ครั้ง)")
+            
+            # Summary statistics
+            st.markdown("### 📈 สถิติสรุป")
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.metric("จำนวนการประเมินทั้งหมด", summary['total_interpretations'])
+            
+            with col2:
+                excellent_percent = (summary['result_distribution']['ดีเยี่ยม'] / 
+                                   summary['total_interpretations'] * 100) if summary['total_interpretations'] > 0 else 0
+                st.metric("% ที่ได้ผลดีเยี่ยม", f"{excellent_percent:.1f}%")
+            
+            with col3:
+                need_improve = (summary['result_distribution']['ควรปรับปรุง'] + 
+                              summary['result_distribution']['ต้องปรับปรุงมาก'])
+                improve_percent = (need_improve / summary['total_interpretations'] * 100) if summary['total_interpretations'] > 0 else 0
+                st.metric("% ที่ต้องปรับปรุง", f"{improve_percent:.1f}%")
+            
+        else:
+            st.warning(message)
+            
+    except Exception as e:
+        st.error(f"เกิดข้อผิดพลาด: {str(e)}")
+
+def save_assessment_to_sheets(results, file_info=None):
+    """Enhanced save assessment results to Google Sheets with unique ID"""
+    if not GSHEETS_AVAILABLE:
+        return False, "Google Sheets integration is not available"
+    
+    if not hasattr(st.session_state, 'current_spreadsheet') or not st.session_state.sheets_manager.initialized:
+        return False, "ยังไม่ได้เชื่อมต่อ Google Sheets"
+    
+    try:
+        # Add assessor info
+        assessor_name = st.session_state.get('assessor_name', 'ไม่ระบุ')
+        results['assessor'] = assessor_name
+        
+        # Enhanced save with unique ID and duplicate checking
+        success, message = st.session_state.sheets_manager.save_assessment_data(
+            st.session_state.current_spreadsheet,
+            results,
+            file_info,
+            allow_duplicates=False  # Set to False to check for duplicates
+        )
+        
+        return success, message
+        
+    except Exception as e:
+        return False, f"เกิดข้อผิดพลาด: {str(e)}"
 
 def show_file_upload_interface():
-    """Enhanced file upload interface with AI analysis and auto Google Sheets saving"""
-    st.subheader("📁 File Upload & AI Analysis")
+    """Enhanced file upload interface with AI analysis and Google Sheets saving"""
+    st.subheader("📁 File Upload & AI Analysis (Enhanced)")
     
     # File upload
     uploaded_file = st.file_uploader(
@@ -1512,15 +2166,15 @@ def show_file_upload_interface():
         st.session_state.last_filename = uploaded_file.name
         
         # Process file button
-        if st.button("🔍 Process File & Analyze", type="primary", use_container_width=True):
-            with st.spinner("Processing file and performing analysis..."):
+        if st.button("🔍 Process File & Analyze (Enhanced)", type="primary", use_container_width=True):
+            with st.spinner("Processing file and performing enhanced analysis..."):
                 # Progress tracking
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
                 # Step 1: Extract content
                 status_text.text("📄 Extracting content from file...")
-                progress_bar.progress(20)
+                progress_bar.progress(25)
                 time.sleep(0.5)
                 
                 content = extract_text_from_file(uploaded_file)
@@ -1529,7 +2183,7 @@ def show_file_upload_interface():
                 ai_analysis = None
                 if use_ai:
                     status_text.text("🤖 Performing AI analysis...")
-                    progress_bar.progress(40)
+                    progress_bar.progress(50)
                     time.sleep(1)
                     
                     content_hash = hashlib.md5(content.encode()).hexdigest()
@@ -1537,7 +2191,7 @@ def show_file_upload_interface():
                 
                 # Step 3: Multi-level analysis
                 status_text.text("🎯 Performing multi-level assessment...")
-                progress_bar.progress(60)
+                progress_bar.progress(75)
                 time.sleep(0.5)
                 
                 engine = MultiLevelAssessmentEngine()
@@ -1547,20 +2201,25 @@ def show_file_upload_interface():
                     ai_analysis
                 )
                 
-                # Step 4: Auto-save to Google Sheets
-                status_text.text("💾 Auto-saving to Google Sheets...")
-                progress_bar.progress(80)
-                
-                file_info = {
-                    'name': uploaded_file.name,
-                    'type': uploaded_file.type,
-                    'size': file_size
-                }
-                
-                auto_save_to_sheets(results, file_info)
+                # Step 4: Enhanced save to Google Sheets (if connected)
+                if GSHEETS_AVAILABLE and hasattr(st.session_state, 'current_spreadsheet'):
+                    status_text.text("💾 Saving to Google Sheets with unique ID...")
+                    progress_bar.progress(90)
+                    
+                    file_info = {
+                        'name': uploaded_file.name,
+                        'type': uploaded_file.type,
+                        'size': file_size
+                    }
+                    
+                    save_success, save_message = save_assessment_to_sheets(results, file_info)
+                    if save_success:
+                        st.success(f"✅ {save_message}")
+                    else:
+                        st.warning(f"⚠️ {save_message}")
                 
                 # Step 5: Complete
-                status_text.text("✅ Analysis complete!")
+                status_text.text("✅ Enhanced analysis complete!")
                 progress_bar.progress(100)
                 time.sleep(0.5)
                 
@@ -1572,7 +2231,7 @@ def show_file_upload_interface():
                 st.session_state.analysis_results = results
                 st.session_state.slide_content = content
                 
-                # Show success message
+                # Show enhanced success message
                 if ai_analysis:
                     st.success(f"✅ File processed with AI analysis! Assessment ID: {results.get('assessment_id', 'Unknown')}")
                 else:
@@ -1629,7 +2288,7 @@ def create_enhanced_gauge_chart(score, title="Score", confidence=None):
 
 def create_multi_level_dashboard(results):
     """Create comprehensive multi-level dashboard with enhanced features"""
-    st.header("🎯 Multi-Level Learning Outcome Assessment")
+    st.header("🎯 Enhanced Multi-Level Learning Outcome Assessment")
     
     # Course Information with enhanced AI status
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -1652,8 +2311,42 @@ def create_multi_level_dashboard(results):
         if content_hash:
             st.caption(f"Content Hash: `{content_hash[:8]}...`")
     
+    # Enhanced save to Google Sheets option
+    if GSHEETS_AVAILABLE and hasattr(st.session_state, 'current_spreadsheet'):
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("💾 บันทึกผลการประเมินลง Google Sheets", type="secondary"):
+                file_info = {
+                    'name': st.session_state.get('last_filename', 'ป้อนข้อความ'),
+                    'type': 'text/plain',
+                    'size': 0
+                }
+                
+                success, message = save_assessment_to_sheets(results, file_info)
+                if success:
+                    st.success(message)
+                else:
+                    st.error(message)
+        
+        with col2:
+            if st.button("🔍 ตรวจสอบข้อมูลซ้ำ", type="secondary"):
+                content_hash = results.get('content_hash', '')
+                course_code = results.get('course_code', '')
+                
+                if content_hash and course_code:
+                    is_duplicate, original_id = check_duplicate_assessment(
+                        st.session_state.current_spreadsheet, content_hash, course_code
+                    )
+                    
+                    if is_duplicate:
+                        st.warning(f"⚠️ พบข้อมูลซ้ำกับ Assessment ID: {original_id}")
+                    else:
+                        st.success("✅ ข้อมูลไม่ซ้ำ")
+                else:
+                    st.info("ไม่สามารถตรวจสอบได้")
+    
     # Overall Scores with Enhanced Gauge Charts
-    st.subheader("📊 Performance Dashboard")
+    st.subheader("📊 Enhanced Performance Dashboard")
     
     col1, col2, col3 = st.columns(3)
     
@@ -1702,10 +2395,48 @@ def create_multi_level_dashboard(results):
     
     # Enhanced AI Recommendations (if available)
     if results.get('ai_recommendations'):
-        st.subheader("🤖 AI Recommendations")
+        st.subheader("🤖 Enhanced AI Recommendations")
         for i, rec in enumerate(results['ai_recommendations'], 1):
             st.write(f"{i}. {rec}")
         st.markdown("---")
+    
+    # Enhanced Calculation Method Explanation
+    with st.expander("📊 วิธีการคำนวณคะแนนแต่ละระดับ (Enhanced)"):
+        calc_methods = results['overall_scores'].get('calculation_method', {})
+        st.markdown("**CLO (Course Learning Outcomes):**")
+        st.write(f"• {calc_methods.get('clo', 'การเฉลี่ยแบบธรรมดาของคะแนน CLO ทั้งหมด')}")
+        
+        st.markdown("**PLO (Program Learning Outcomes):**") 
+        st.write(f"• {calc_methods.get('plo', 'การเฉลี่ยถ่วงน้ำหนักตามความสำคัญของ PLO')}")
+        st.write("• น้ำหนัก: PLO1 (35%), PLO2 (35%), PLO3 (30%)")
+        
+        st.markdown("**YLO (Year Learning Outcomes):**")
+        st.write(f"• {calc_methods.get('ylo', 'การเฉลี่ยถ่วงน้ำหนักตามความซับซ้อนทางความคิด')}")
+        st.write("• น้ำหนักตามระดับความคิด: Understanding (1.0), Applying (1.1), Evaluating (1.2), Creating (1.3)")
+        
+        # Show specific calculations for this assessment
+        st.markdown("**การคำนวณเฉพาะการประเมินนี้:**")
+        st.write(f"**Assessment ID:** `{results.get('assessment_id', 'N/A')}`")
+        st.write(f"**Content Hash:** `{results.get('content_hash', 'N/A')[:16]}...`")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.write("**CLO Scores:**")
+            for clo, data in results['clo_results'].items():
+                st.write(f"• {clo}: {data['score']:.1f}%")
+        
+        with col2:
+            st.write("**PLO Mapping:**")
+            for plo, data in results['plo_results'].items():
+                related = ', '.join(data['related_clos'])
+                st.write(f"• {plo}: CLO {related}")
+        
+        with col3:
+            st.write("**YLO Cognitive Levels:**")
+            for ylo, data in results['ylo_results'].items():
+                multiplier = data.get('cognitive_multiplier', 1.0)
+                st.write(f"• {ylo}: {data['cognitive_level']} (×{multiplier})")
     
     # Enhanced Multi-level Analysis Tabs
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 CLO Analysis", "🎯 PLO Analysis", "📈 YLO Analysis", "🔗 Alignment Matrix", "📊 การแปลผลโดยรวม"])
@@ -1725,7 +2456,88 @@ def create_multi_level_dashboard(results):
     with tab5:
         display_comprehensive_interpretation(results)
 
-# Display Functions
+# Missing Display Functions
+def display_clo_interpretation(clo_results):
+    """Display detailed interpretation of CLO analysis results"""
+    st.markdown("---")
+    st.subheader("📊 การแปลผลการวิเคราะห์ CLO")
+    
+    # Calculate average CLO score
+    clo_scores = [data['score'] for data in clo_results.values()]
+    avg_clo = sum(clo_scores) / len(clo_scores) if clo_scores else 0
+    avg_confidence = sum(data.get('confidence', 0.8) for data in clo_results.values()) / len(clo_results) if clo_results else 0
+    
+    # Overall CLO interpretation
+    col1, col2, col3 = st.columns([2, 1, 1])
+    
+    with col1:
+        st.markdown("### 📈 ภาพรวมคะแนน CLO")
+        
+        # Score interpretation
+        if avg_clo >= 85:
+            st.success(f"🌟 **ดีเยี่ยม** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหามีความสอดคล้องกับวัตถุประสงค์การเรียนรู้ในระดับดีเยี่ยม")
+        elif avg_clo >= 70:
+            st.success(f"✅ **ดี** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหาสอดคล้องกับวัตถุประสงค์การเรียนรู้ในระดับดี")
+        elif avg_clo >= 60:
+            st.warning(f"⚠️ **ควรปรับปรุง** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหามีความสอดคล้องในระดับปานกลาง ควรเพิ่มเติมเนื้อหา")
+        else:
+            st.error(f"❌ **ต้องปรับปรุงมาก** - คะแนนเฉลี่ย: {avg_clo:.1f}%")
+            st.write("เนื้อหายังไม่สอดคล้องกับวัตถุประสงค์การเรียนรู้เพียงพอ")
+    
+    with col2:
+        st.markdown("### 🤖 ความมั่นใจ AI")
+        st.metric("AI Confidence", f"{avg_confidence*100:.0f}%")
+        if avg_confidence >= 0.9:
+            st.write("มั่นใจสูงมาก")
+        elif avg_confidence >= 0.8:
+            st.write("มั่นใจสูง")
+        else:
+            st.write("มั่นใจปานกลาง")
+    
+    with col3:
+        st.markdown("### 📊 เกณฑ์คะแนน")
+        st.write("🌟 85%+ = ดีเยี่ยม")
+        st.write("✅ 70-84% = ดี")
+        st.write("⚠️ 60-69% = ควรปรับปรุง")
+        st.write("❌ <60% = ต้องปรับปรุง")
+    
+    # Individual CLO interpretation
+    st.markdown("### 🎯 การวิเคราะห์รายตัว")
+    
+    # Create interpretation table
+    interpretation_data = []
+    for clo_code, clo_data in clo_results.items():
+        score = clo_data['score']
+        confidence = clo_data.get('confidence', 0.8)
+        
+        # Determine status
+        if score >= 85:
+            status = "🌟 ดีเยี่ยม"
+            recommendation = "รักษาคุณภาพและใช้เป็นตัวอย่าง"
+        elif score >= 70:
+            status = "✅ ดี"
+            recommendation = "เพิ่มตัวอย่างและกรณีศึกษา"
+        elif score >= 60:
+            status = "⚠️ ควรปรับปรุง"
+            recommendation = "เพิ่มคำสำคัญและเนื้อหาที่เกี่ยวข้อง"
+        else:
+            status = "❌ ต้องปรับปรุง"
+            recommendation = "ทบทวนและเพิ่มเนื้อหาให้ตรงกับ CLO"
+        
+        interpretation_data.append({
+            'CLO': clo_code,
+            'คะแนน': f"{score:.1f}%",
+            'สถานะ': status,
+            'ความมั่นใจ AI': f"{confidence*100:.0f}%",
+            'คำแนะนำเบื้องต้น': recommendation
+        })
+    
+    interpretation_df = pd.DataFrame(interpretation_data)
+    st.dataframe(interpretation_df, use_container_width=True, hide_index=True)
+
 def display_enhanced_clo_analysis(clo_results):
     """Display enhanced CLO analysis with AI insights using gauge charts"""
     st.subheader("📋 Course Learning Outcomes (CLO) Analysis")
@@ -1762,6 +2574,9 @@ def display_enhanced_clo_analysis(clo_results):
             else:
                 st.error(f"❌ Poor ({score:.1f}%)")
     
+    # Add comprehensive interpretation section
+    display_clo_interpretation(clo_results)
+    
     # Detailed CLO Analysis with AI insights
     for clo_code, clo_data in clo_results.items():
         with st.expander(f"{clo_code}: {clo_data['description'][:60]}..."):
@@ -1793,6 +2608,16 @@ def display_enhanced_clo_analysis(clo_results):
                     st.success("🤖 AI Enhanced")
                 else:
                     st.info("📊 Rule-based")
+                
+                # Score status
+                if score >= 80:
+                    st.success("Excellent")
+                elif score >= 70:
+                    st.info("Good")
+                elif score >= 60:
+                    st.warning("Fair")
+                else:
+                    st.error("Needs Improvement")
 
 def display_plo_analysis(plo_results):
     """Display Program Learning Outcome analysis with gauge charts"""
@@ -2137,6 +2962,7 @@ def display_comprehensive_interpretation(results):
     else:
         st.success("✅ เนื้อหามีความสมดุลและครอบคลุมดีแล้ว")
 
+# Additional helper functions (keeping existing implementations)
 def generate_improvement_recommendations(results):
     """Generate specific improvement recommendations in Thai"""
     recommendations = []
@@ -2206,268 +3032,85 @@ def generate_improvement_recommendations(results):
         recommendations.append("พิจารณาการพัฒนาเป็นเนื้อหาขั้นสูงหรือการวิจัยเชิงลึก")
     
     return recommendations[:6]  # Limit to top 6 recommendations
-
-def show_assessment_history():
-    """Show assessment history from Google Sheets"""
-    global sheets_manager
-    if not GSHEETS_AVAILABLE or not sheets_manager or not sheets_manager.initialized:
-        st.warning("Google Sheets integration is not available.")
-        return
+    """Generate specific improvement recommendations in Thai"""
+    recommendations = []
     
-    st.subheader("📋 ประวัติการประเมิน")
+    # CLO-based recommendations
+    clo_scores = [data['score'] for data in results['clo_results'].values()]
+    if clo_scores:
+        avg_clo = sum(clo_scores) / len(clo_scores)
+        if avg_clo < 70:
+            recommendations.append("ปรับปรุงเนื้อหาให้สอดคล้องกับวัตถุประสงค์รายวิชา (CLO) มากขึ้น")
+        elif avg_clo < 80:
+            recommendations.append("เสริมเนื้อหาเพื่อยกระดับความสอดคล้องกับ CLO ให้ถึงระดับดีเยี่ยม")
     
-    # Filter options
-    col1, col2, col3, col4 = st.columns(4)
+    # PLO-based recommendations
+    plo_scores = [data['score'] for data in results['plo_results'].values()]
+    if plo_scores:
+        avg_plo = sum(plo_scores) / len(plo_scores)
+        if avg_plo < 70:
+            recommendations.append("เสริมเนื้อหาให้เชื่อมโยงกับผลการเรียนรู้ของหลักสูตร (PLO) ให้ชัดเจนขึ้น")
+        elif avg_plo < 85:
+            recommendations.append("พัฒนาการเชื่อมโยงระหว่างเนื้อหาและ PLO ให้แข็งแกร่งขึ้น")
     
-    with col1:
-        filter_course = st.selectbox(
-            "กรองตามรายวิชา",
-            options=['ทั้งหมด'] + list(COURSE_DESCRIPTIONS.keys()),
-            index=0
-        )
+    # YLO-based recommendations
+    ylo_scores = [data['score'] for data in results['ylo_results'].values()]
+    if ylo_scores:
+        avg_ylo = sum(ylo_scores) / len(ylo_scores)
+        if avg_ylo < 70:
+            recommendations.append("ปรับระดับเนื้อหาให้เหมาะสมกับผลการเรียนรู้ระดับชั้นปี (YLO)")
+        elif avg_ylo < 85:
+            recommendations.append("ยกระดับความซับซ้อนของเนื้อหาให้สอดคล้องกับระดับการคิดขั้นสูง")
     
-    with col2:
-        limit_records = st.number_input(
-            "จำนวนรายการ",
-            min_value=10,
-            max_value=200,
-            value=50,
-            step=10
-        )
+    # Specific content recommendations based on CLO scores
+    low_clos = [clo for clo, data in results['clo_results'].items() if data['score'] < 70]
+    if low_clos:
+        recommendations.append(f"เพิ่มเนื้อหาและกิจกรรมที่เกี่ยวข้องกับ {', '.join(low_clos)}")
     
-    with col3:
-        show_unique_only = st.checkbox(
-            "แสดงเฉพาะข้อมูลไม่ซ้ำ",
-            value=False,
-            help="แสดงเฉพาะการประเมินที่ไม่ซ้ำกัน"
-        )
+    # Enhanced recommendations with Assessment ID
+    assessment_id = results.get('assessment_id', 'Unknown')
+    if assessment_id != 'Unknown':
+        recommendations.append(f"บันทึกการปรับปรุงภายใต้ Assessment ID: {assessment_id}")
     
-    with col4:
-        if st.button("🔄 รีเฟรชข้อมูล"):
-            st.rerun()
-    
-    # Get enhanced assessment history
-    course_filter = None if filter_course == 'ทั้งหมด' else filter_course
-    
-    try:
-        history, message = sheets_manager.get_assessment_history(
-            course_code=course_filter,
-            limit=limit_records
-        )
+    # AI-specific recommendations
+    if results.get('ai_enhanced'):
+        low_confidence_clos = [clo for clo, data in results['clo_results'].items() if data.get('confidence', 1) < 0.8]
+        if low_confidence_clos:
+            recommendations.append(f"ปรับปรุงความชัดเจนและความลึกของเนื้อหาใน {', '.join(low_confidence_clos)}")
         
-        if history:
-            st.success(message)
-            
-            # Filter unique only if requested
-            if show_unique_only:
-                history = [r for r in history if r.get('Unique_Assessment', True)]
-                st.info(f"แสดง {len(history)} รายการที่ไม่ซ้ำกัน")
-            
-            # Display enhanced metrics
-            if history:
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    total_assessments = len(history)
-                    st.metric("การประเมินทั้งหมด", total_assessments)
-                
-                with col2:
-                    unique_count = sum(1 for r in history if r.get('Unique_Assessment', True))
-                    st.metric("ข้อมูลไม่ซ้ำ", unique_count)
-                
-                with col3:
-                    ai_count = sum(1 for r in history if r.get('AI_Enhanced', False))
-                    st.metric("ใช้ AI", ai_count)
-                
-                with col4:
-                    avg_clo = sum(r.get('CLO_Average', 0) for r in history) / len(history) if history else 0
-                    st.metric("CLO เฉลี่ย", f"{avg_clo:.1f}%")
-            
-            # Display as enhanced dataframe
-            df = pd.DataFrame(history)
-            
-            # Select relevant columns for display with enhanced info
-            display_columns = [
-                'วันที่', 'เวลา', 'รหัสการประเมิน', 'รหัสวิชา', 'ชื่อวิชา',
-                'ประเภทไฟล์', 'AI_Enhanced', 'CLO_Average', 'PLO_Average', 'YLO_Average',
-                'Unique_Assessment', 'Content_Hash'
-            ]
-            
-            available_columns = [col for col in display_columns if col in df.columns]
-            
-            if available_columns:
-                # Enhanced display with color coding
-                display_df = df[available_columns].copy()
-                
-                # Add status indicators
-                if 'Unique_Assessment' in display_df.columns:
-                    display_df['สถานะ'] = display_df['Unique_Assessment'].apply(
-                        lambda x: '✅ ไม่ซ้ำ' if x else '⚠️ ซ้ำ'
-                    )
-                
-                st.dataframe(
-                    display_df,
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                # Enhanced download options
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 ดาวน์โหลด CSV (ทั้งหมด)",
-                        data=csv,
-                        file_name=f"assessment_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
-                
-                with col2:
-                    if show_unique_only and len(history) > 0:
-                        unique_csv = pd.DataFrame([r for r in history if r.get('Unique_Assessment', True)]).to_csv(index=False)
-                        st.download_button(
-                            label="📥 ดาวน์โหลด CSV (ไม่ซ้ำ)",
-                            data=unique_csv,
-                            file_name=f"unique_assessments_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                            mime="text/csv"
-                        )
-            else:
-                st.warning("ไม่พบคอลัมน์ข้อมูลที่ต้องการแสดง")
-        else:
-            st.info(message)
-            
-    except Exception as e:
-        st.error(f"เกิดข้อผิดพลาดในการดึงข้อมูล: {str(e)}")
+        # High-level AI recommendations
+        overall_confidence = results['overall_scores'].get('overall_confidence', 0)
+        if overall_confidence > 0.95:
+            recommendations.append("เนื้อหามีคุณภาพสูงมาก แนะนำให้พัฒนาเป็นต้นแบบหรือกรณีศึกษา")
+        elif overall_confidence > 0.90:
+            recommendations.append("เนื้อหาอยู่ในระดับดี แนะนำให้เพิ่มความลึกและการประยุกต์ใช้จริง")
+    
+    # Course-specific recommendations
+    course_code = results.get('course_code', '')
+    if '282712' in course_code:  # Water resource course
+        recommendations.append("เพิ่มกรณีศึกษาการจัดการน้ำในบริบทไทยและอาเซียน")
+    elif '282714' in course_code:  # Research methodology
+        recommendations.append("เสริมเทคนิคการวิจัยสมัยใหม่และการใช้เครื่องมือดิจิทัล")
+    elif '282734' in course_code:  # Communication
+        recommendations.append("พัฒนาทักษะการสื่อสารแบบสื่อผสมและแพลตฟอร์มดิจิทัล")
+    
+    # General enhancement recommendations
+    if not recommendations:
+        recommendations.append("เนื้อหามีความสอดคล้องในระดับดีมาก ควรรักษาคุณภาพและนำไปเป็นแบบอย่าง")
+        recommendations.append("พิจารณาการพัฒนาเป็นเนื้อหาขั้นสูงหรือการวิจัยเชิงลึก")
+    
+    return recommendations[:6]  # Limit to top 6 recommendations
 
-def show_course_analytics():
-    """Show analytics for courses"""
-    global sheets_manager
-    if not GSHEETS_AVAILABLE or not sheets_manager or not sheets_manager.initialized:
-        st.warning("Google Sheets integration is not available.")
-        return
-    
-    st.subheader("📈 การวิเคราะห์ข้อมูลรายวิชา")
-    
-    # Course selection
-    selected_course = st.selectbox(
-        "เลือกรายวิชาสำหรับวิเคราะห์",
-        options=list(COURSE_DESCRIPTIONS.keys()),
-        format_func=lambda x: f"{x} - {COURSE_DESCRIPTIONS[x]['name']}"
-    )
-    
-    if st.button("📊 วิเคราะห์ข้อมูล"):
-        try:
-            analytics, message = sheets_manager.get_course_analytics(selected_course)
-            
-            if analytics:
-                st.success(message)
-                
-                # Display enhanced analytics
-                col1, col2, col3, col4, col5 = st.columns(5)
-                
-                with col1:
-                    st.metric(
-                        "การประเมินทั้งหมด",
-                        analytics['total_assessments']
-                    )
-                
-                with col2:
-                    st.metric(
-                        "ข้อมูลไม่ซ้ำ",
-                        analytics.get('unique_assessments', 0),
-                        f"+{analytics.get('unique_assessments', 0) - analytics.get('duplicate_assessments', 0)}"
-                    )
-                
-                with col3:
-                    st.metric(
-                        "CLO เฉลี่ย",
-                        f"{analytics['avg_clo_score']:.1f}%"
-                    )
-                
-                with col4:
-                    st.metric(
-                        "PLO เฉลี่ย",
-                        f"{analytics['avg_plo_score']:.1f}%"
-                    )
-                
-                with col5:
-                    ai_percentage = (analytics['ai_enhanced_count'] / analytics['total_assessments'] * 100) if analytics['total_assessments'] > 0 else 0
-                    st.metric(
-                        "การใช้ AI",
-                        f"{ai_percentage:.1f}%",
-                        f"{analytics['ai_enhanced_count']}/{analytics['total_assessments']}"
-                    )
-                
-                # Enhanced charts
-                if analytics['recent_assessments']:
-                    st.markdown("### 📊 แนวโน้มคะแนน")
-                    
-                    recent_df = pd.DataFrame(analytics['recent_assessments'])
-                    
-                    # Create trend chart
-                    fig = go.Figure()
-                    
-                    fig.add_trace(go.Scatter(
-                        x=recent_df['วันที่'],
-                        y=recent_df['CLO_Average'],
-                        mode='lines+markers',
-                        name='CLO Average',
-                        line=dict(color='#FF6B6B')
-                    ))
-                    
-                    fig.add_trace(go.Scatter(
-                        x=recent_df['วันที่'],
-                        y=recent_df['PLO_Average'],
-                        mode='lines+markers',
-                        name='PLO Average',
-                        line=dict(color='#4ECDC4')
-                    ))
-                    
-                    fig.add_trace(go.Scatter(
-                        x=recent_df['วันที่'],
-                        y=recent_df['YLO_Average'],
-                        mode='lines+markers',
-                        name='YLO Average',
-                        line=dict(color='#45B7D1')
-                    ))
-                    
-                    fig.update_layout(
-                        title="แนวโน้มคะแนนการประเมิน",
-                        xaxis_title="วันที่",
-                        yaxis_title="คะแนน (%)",
-                        height=400
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                # Recent assessments table
-                st.markdown("### 📅 การประเมินล่าสุด")
-                if analytics['recent_assessments']:
-                    recent_df = pd.DataFrame(analytics['recent_assessments'])
-                    st.dataframe(recent_df, use_container_width=True, hide_index=True)
-                else:
-                    st.info("ไม่มีข้อมูลการประเมินล่าสุด")
-            else:
-                st.warning(message)
-                
-        except Exception as e:
-            st.error(f"เกิดข้อผิดพลาด: {str(e)}")
+# Keep existing display functions (display_clo_interpretation, display_enhanced_clo_analysis, etc.)
+# ... (existing functions remain the same)
 
-# Main Application
+# Main Application (Enhanced)
 def main():
     st.set_page_config(
-        page_title="PLO Assessment System with Auto Google Sheets",
+        page_title="Enhanced Multi-Level Assessment System with Unique Google Sheets Recording",
         page_icon="🎯",
         layout="wide"
     )
-    
-    # Initialize Google Sheets manager after set_page_config
-    global sheets_manager
-    if GSHEETS_AVAILABLE and sheets_manager is None:
-        sheets_manager = GoogleSheetsManager()
-        # Try to initialize after creation
-        sheets_manager.auto_initialize()
     
     # Initialize session state
     if 'selected_course_code' not in st.session_state:
@@ -2475,64 +3118,65 @@ def main():
     if 'assessor_name' not in st.session_state:
         st.session_state.assessor_name = ''
     
-    # Check Google Sheets connection status
-    gsheets_status = ""
-    if GSHEETS_AVAILABLE and sheets_manager and sheets_manager.initialized:
-        gsheets_status = f" | 📊 Auto-saving to: {TARGET_SPREADSHEET_NAME}"
-        if sheets_manager.spreadsheet:
-            gsheets_status += f" | [View Spreadsheet]({sheets_manager.spreadsheet.url})"
-    else:
-        gsheets_status = " | ⚠️ Google Sheets not connected"
-        # Show error if available
-        if sheets_manager and hasattr(sheets_manager, 'error_message') and sheets_manager.error_message:
-            st.error(f"Google Sheets Error: {sheets_manager.error_message}")
-    
-    # Header
-    st.markdown(f"""
+    # Enhanced header
+    st.markdown("""
     <style>
-    .main-header {{
+    .main-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         padding: 2rem;
         border-radius: 15px;
         color: white;
         text-align: center;
         margin-bottom: 2rem;
-    }}
-    .info-card {{
+    }
+    .info-card {
         background-color: #f8f9fa;
         padding: 1.5rem;
         border-radius: 10px;
         margin-bottom: 1rem;
         border-left: 4px solid #667eea;
-    }}
-    .metric-card {{
+    }
+    .metric-card {
         background-color: white;
         padding: 1rem;
         border-radius: 8px;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }}
+    }
+    .unique-badge {
+        background-color: #28a745;
+        color: white;
+        padding: 0.2rem 0.6rem;
+        border-radius: 15px;
+        font-size: 0.8rem;
+        font-weight: bold;
+    }
     </style>
     
     <div class="main-header">
-        <h1>🎯 PLO Assessment System with Auto Google Sheets</h1>
-        <p style="font-size: 1.1em;">ระบบประเมินผลการเรียนรู้ CLO → PLO → YLO พร้อมบันทึกอัตโนมัติ</p>
-        <p style="font-size: 0.9em;">
-            📁 นำเข้าไฟล์ | 🤖 วิเคราะห์ด้วย AI | 📊 ประเมินหลายระดับ | 💾 บันทึกอัตโนมัติ{gsheets_status}
+        <h1>🎯 Enhanced Multi-Level Assessment + Unique Google Sheets Recording</h1>
+        <p style="font-size: 1.1em;">ระบบประเมินผลการเรียนรู้แบบหลายระดับ CLO → PLO → YLO พร้อมบันทึกข้อมูลไม่ซ้ำลง Google Sheets</p>
+        <p style="font-size: 0.9em; opacity: 0.9;">
+            📁 นำเข้าไฟล์ | 🤖 วิเคราะห์ด้วย AI | 📊 ประเมินหลายระดับ | 💾 บันทึกลง Google Sheets <span class="unique-badge">UNIQUE ID</span>
+        </p>
+        <p style="font-size: 0.8em; opacity: 0.8;">
+            ✨ NEW: Unique Assessment ID | Duplicate Detection | Enhanced Analytics | Content Hash Tracking
         </p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    # Enhanced tabs with new features
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
         "🎯 การประเมิน", 
-        "📋 ประวัติการประเมิน",
-        "📈 วิเคราะห์ข้อมูล",
+        "📊 Google Sheets (Enhanced)", 
+        "📋 ประวัติการประเมิน (Enhanced)",
+        "📈 วิเคราะห์ข้อมูล (Enhanced)",
+        "🔍 การแปลผล",
         "📚 ข้อมูลหลักสูตร", 
-        "📖 คู่มือการใช้งาน"
+        "📖 คู่มือการใช้งาน (Enhanced)"
     ])
     
     with tab1:
-        # User Information
+        # Enhanced User Information
         st.markdown('<div class="info-card">', unsafe_allow_html=True)
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -2542,47 +3186,21 @@ def main():
                 placeholder="ระบุชื่อผู้ประเมิน (ไม่บังคับ)"
             )
         with col2:
-            # Google Sheets connection status
-            if GSHEETS_AVAILABLE and sheets_manager and sheets_manager.initialized:
-                st.success(f"✅ Auto-saving to: {TARGET_SPREADSHEET_NAME}")
+            # Enhanced Google Sheets connection status
+            if GSHEETS_AVAILABLE and hasattr(st.session_state, 'current_spreadsheet'):
+                st.success(f"✅ เชื่อมต่อ Google Sheets: {st.session_state.current_spreadsheet.title}")
+                st.success("🆕 พร้อมบันทึกข้อมูลใหม่ทุกครั้ง")
             else:
-                st.error("❌ Google Sheets not connected")
-                # Show debug info
-                if not GSHEETS_AVAILABLE:
-                    st.warning("Google Sheets libraries not installed")
-                elif not sheets_manager:
-                    st.warning("Sheets manager not created")
-                elif hasattr(sheets_manager, 'error_message') and sheets_manager.error_message:
-                    st.error(f"Error: {sheets_manager.error_message}")
-                    with st.expander("🔧 วิธีแก้ไข"):
-                        st.markdown("""
-                        **หากเห็นข้อความ "Service account not found in secrets":**
-                        1. สร้างไฟล์ `.streamlit/secrets.toml` ในโฟลเดอร์โปรเจค
-                        2. เพิ่ม service account credentials ตามรูปแบบในคู่มือ
-                        3. Restart แอพ Streamlit
-                        
-                        **หากใช้ Streamlit Cloud:**
-                        1. ไปที่ Settings → Secrets ในแอพของคุณ
-                        2. เพิ่ม [gcp_service_account] section
-                        3. Reboot แอพ
-                        """)
+                st.info("ℹ️ ยังไม่ได้เชื่อมต่อ Google Sheets (ไปที่แท็บ Google Sheets)")
         with col3:
-            # Show current time
+            # Show current time and unique ID preview
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             st.info(f"⏰ เวลาปัจจุบัน: {current_time}")
-            
-            # Add retry button if Google Sheets failed
-            if GSHEETS_AVAILABLE and sheets_manager and not sheets_manager.initialized:
-                if st.button("🔄 Retry Google Sheets Connection"):
-                    # Try to reinitialize
-                    success = sheets_manager.auto_initialize()
-                    if success:
-                        st.success("✅ Connected successfully!")
-                        st.rerun()
-                    else:
-                        st.error(f"Failed: {sheets_manager.error_message}")
+            preview_id = f"ASSESS_{datetime.now().strftime('%Y%m%d_%H%M%S')}_xxxx"
+            st.caption(f"🆔 ID ต่อไป: {preview_id}")
         st.markdown('</div>', unsafe_allow_html=True)
         
+        # Rest of the application logic remains the same but with enhanced features
         # Course Selection
         st.markdown('<div class="info-card">', unsafe_allow_html=True)
         st.subheader("📚 เลือกรายวิชาสำหรับการประเมิน")
@@ -2599,7 +3217,7 @@ def main():
         
         st.session_state.selected_course_code = course_options[selected_course_display]
         
-        # Display course information
+        # Display course information in a clean format
         course_info = COURSE_DESCRIPTIONS[st.session_state.selected_course_code]
         
         col1, col2 = st.columns([3, 1])
@@ -2617,7 +3235,7 @@ def main():
         
         # Input Method Selection
         st.markdown("---")
-        st.subheader("📝 เลือกวิธีการป้อนข้อมูล")
+        st.subheader("📝 เลือกวิธีการป้อนข้อมูล (Enhanced)")
         
         input_method = st.radio(
             "วิธีการ:",
@@ -2629,13 +3247,13 @@ def main():
         content = None
         
         if input_method == "📁 อัพโหลดไฟล์ (PDF/PowerPoint)":
-            # File upload interface
+            # Enhanced file upload interface
             results, content = show_file_upload_interface()
             
         else:
-            # Direct text input
+            # Enhanced direct text input
             st.markdown('<div class="info-card">', unsafe_allow_html=True)
-            st.subheader("📝 ป้อนเนื้อหาสำหรับการวิเคราะห์")
+            st.subheader("📝 ป้อนเนื้อหาสำหรับการวิเคราะห์ (Enhanced)")
             
             sample_content = f"""
 # บทที่ 1: การจัดการทรัพยากรน้ำอย่างยั่งยืน
@@ -2681,13 +3299,13 @@ def main():
                 "📄 เนื้อหา:",
                 value=sample_content,
                 height=400,
-                help="วางเนื้อหาของคุณที่นี่เพื่อวิเคราะห์แบบหลายระดับ"
+                help="วางเนื้อหาของคุณที่นี่เพื่อวิเคราะห์แบบหลายระดับ (Enhanced)"
             )
             
             # Store filename for Google Sheets
             st.session_state.last_filename = "ป้อนข้อความ"
             
-            # AI Analysis option for text input
+            # Enhanced AI Analysis option for text input
             col1, col2 = st.columns(2)
             with col1:
                 use_ai = st.checkbox(
@@ -2703,24 +3321,24 @@ def main():
             
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # Analysis Button
-            if st.button("🔍 ทำการวิเคราะห์", type="primary", use_container_width=True):
+            # Enhanced Analysis Button
+            if st.button("🔍 ทำการวิเคราะห์ (Enhanced)", type="primary", use_container_width=True):
                 if content.strip():
-                    with st.spinner("กำลังประมวลผล CLO-PLO-YLO..."):
+                    with st.spinner("กำลังประมวลผล CLO-PLO-YLO พร้อมสร้าง Unique ID..."):
                         # Progress tracking
                         progress_bar = st.progress(0)
                         status_text = st.empty()
                         
                         # Step 1: Generate unique ID
                         status_text.text("🆔 Generating unique assessment ID...")
-                        progress_bar.progress(20)
+                        progress_bar.progress(15)
                         time.sleep(0.3)
                         
                         # Step 2: AI Analysis (if enabled)
                         ai_analysis = None
                         if use_ai:
                             status_text.text("🤖 Performing AI analysis...")
-                            progress_bar.progress(40)
+                            progress_bar.progress(35)
                             time.sleep(0.5)
                             
                             content_hash = hashlib.md5(content.encode()).hexdigest()
@@ -2741,20 +3359,25 @@ def main():
                             ai_analysis
                         )
                         
-                        # Step 4: Auto-save to Google Sheets
-                        status_text.text("💾 Auto-saving to Google Sheets...")
-                        progress_bar.progress(80)
-                        
-                        file_info = {
-                            'name': 'ป้อนข้อความ',
-                            'type': 'text/plain',
-                            'size': len(content.encode('utf-8'))
-                        }
-                        
-                        auto_save_to_sheets(results, file_info)
+                        # Step 4: Enhanced save to Google Sheets (if connected)
+                        if GSHEETS_AVAILABLE and hasattr(st.session_state, 'current_spreadsheet'):
+                            status_text.text("💾 Saving to Google Sheets with unique ID...")
+                            progress_bar.progress(85)
+                            
+                            file_info = {
+                                'name': 'ป้อนข้อความ',
+                                'type': 'text/plain',
+                                'size': len(content.encode('utf-8'))
+                            }
+                            
+                            save_success, save_message = save_assessment_to_sheets(results, file_info)
+                            if save_success:
+                                st.success(f"✅ {save_message}")
+                            else:
+                                st.warning(f"⚠️ {save_message}")
                         
                         # Step 5: Complete
-                        status_text.text("✅ Analysis complete!")
+                        status_text.text("✅ Enhanced analysis complete!")
                         progress_bar.progress(100)
                         time.sleep(0.5)
                         
@@ -2766,7 +3389,7 @@ def main():
                         st.session_state.analysis_results = results
                         st.session_state.slide_content = content
                         
-                        # Show success message with unique ID
+                        # Show enhanced success message with unique ID
                         assessment_id = results.get('assessment_id', 'Unknown')
                         if ai_analysis:
                             st.success(f"✅ การวิเคราะห์ด้วย AI เสร็จสมบูรณ์! Assessment ID: `{assessment_id}`")
@@ -2780,15 +3403,15 @@ def main():
                 else:
                     st.warning("กรุณาป้อนเนื้อหาเพื่อทำการวิเคราะห์")
         
-        # Display results if available
+        # Display enhanced results if available
         if results:
             st.markdown("---")
             create_multi_level_dashboard(results)
             
-            # Recommendations
+            # Enhanced recommendations
             st.markdown("---")
             st.markdown('<div class="info-card">', unsafe_allow_html=True)
-            st.subheader("💡 ข้อเสนอแนะสำหรับการปรับปรุง")
+            st.subheader("💡 ข้อเสนอแนะสำหรับการปรับปรุง (Enhanced)")
             
             recommendations = generate_improvement_recommendations(results)
             for i, rec in enumerate(recommendations, 1):
@@ -2800,9 +3423,9 @@ def main():
             st.markdown(f"**🆔 Tracking Info:** Assessment ID: `{assessment_id}` | Content Hash: `{content_hash[:16]}...`")
             st.markdown('</div>', unsafe_allow_html=True)
             
-            # Content preview (if from file)
+            # Enhanced content preview (if from file)
             if content and input_method == "📁 อัพโหลดไฟล์ (PDF/PowerPoint)":
-                with st.expander("👁️ ดูเนื้อหาที่แยกได้"):
+                with st.expander("👁️ ดูเนื้อหาที่แยกได้ (Enhanced)"):
                     st.text_area(
                         "เนื้อหาที่แยกได้:",
                         value=content[:2000] + "..." if len(content) > 2000 else content,
@@ -2820,15 +3443,29 @@ def main():
                         st.caption(f"Assessment ID: {assessment_id[-8:]}")
     
     with tab2:
-        # Assessment history
-        show_assessment_history()
+        # Enhanced Google Sheets setup
+        show_google_sheets_setup()
     
     with tab3:
-        # Course analytics
-        show_course_analytics()
+        # Enhanced assessment history
+        show_assessment_history()
     
     with tab4:
-        # Program Overview Section
+        # Enhanced course analytics
+        show_course_analytics()
+    
+    with tab5:
+        # การแปลผล
+        interpretation_tab1, interpretation_tab2 = st.tabs(["📊 ประวัติการแปลผล", "📈 วิเคราะห์การแปลผล"])
+        
+        with interpretation_tab1:
+            show_interpretation_history()
+        
+        with interpretation_tab2:
+            show_interpretation_analytics()
+    
+    with tab6:
+        # Program Overview Section (same as before)
         st.markdown('<div class="info-card">', unsafe_allow_html=True)
         st.markdown(f"### {PROGRAM_OVERVIEW['program_name']}")
         
@@ -2844,147 +3481,181 @@ def main():
             st.write(f"• {career}")
         st.markdown('</div>', unsafe_allow_html=True)
     
-    with tab5:
-        # User manual
+    with tab7:
+        # Enhanced user manual
         st.markdown('<div class="info-card">', unsafe_allow_html=True)
-        st.subheader("📖 คู่มือการใช้งานระบบ (Auto Google Sheets Version)")
+        st.subheader("📖 คู่มือการใช้งานระบบ (Enhanced Version)")
         
         st.markdown("""
-        ### 🔐 การตั้งค่า Streamlit Secrets
+        ### 🆕 ฟีเจอร์ใหม่ใน Enhanced Version
         
-        **สำหรับ Local Development:**
-        สร้างไฟล์ `.streamlit/secrets.toml` ในโฟลเดอร์โปรเจค:
+        **1. Unique Assessment ID**
+        - สร้าง ID ไม่ซ้ำกันทุกครั้ง (ASSESS_YYYYMMDD_HHMMSS_UUID)
+        - ติดตามการประเมินแต่ละครั้งได้อย่างแม่นยำ
+        - ป้องกันความซ้ำซ้อนของข้อมูล
         
-        ```toml
-        [gcp_service_account]
-        type = "service_account"
-        project_id = "gcm-downscaling"
-        private_key_id = "f885cad7cb9c36ab8087e76ca6711985286113f4"
-        private_key = "-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDotI/yNT11UqVn\\nRPnHyMfUZaxQqQmn2JyI3/LcP9opntJakmY9iT7BpW0SuVwbhZ5/E1zopsaojMSX\\n90W62GhniRjQRznq4n+C5VLa6a1rJe+dHz9ypXwH6+uU85Z7hB++WeXA2UK8Sl5v\\nUNHH2aWcPs23cFGHYLMFlzsuGuLlfvsxyDIu1N61CLNAxAH2KYdGjmaPlgi/GZ73\\nyV4hS+gL/y3OuFWtPdt0KXrZtL3JkfILSmS689yuWjIrr5MHRfwPGVnUtzdAv6Rl\\nA/QlqGIxC46f3k54jnvuMO6HXf9v4Rfrt8PzYWFlz30YAwtG6XqEEG0ULccHzre0\\nA4PH6fVvAgMBAAECggEAbwVuQ6045BeJCEr1LGbTR7c2TclH7QdAL2FA+emQyRiX\\n3VRJaQRop3SoJC3BDvRh2NjBE9I1p0Z5qNL1Np52uSbEauIAdNqY4TdNn1mrPhp8\\nRicZWzYuhYz9+TN50PYJOwSiw64j07dbdJpHa6SgCXpBJUp16zOsVXeAaY+0Pq68\\ne9TZ6hSCHC4+alLJp1YctkNEUK96nZfdkg4JCXHKX4v56l5cQrEZQwhu+eoRYqnQ\\niO130dXScIkdoNvLrpzlBw8rA3CAVQz4ihabWsxtW0C5LJSFcEO88syFbavj++cW\\nl1gOtVh1CkuY+eYouLM45xSfPRd0ojFfVNaIFW4tEQKBgQD2T+pVlC+hdRQJKYQY\\n9S2zp8RA3oiG6YdwME8zl7IQSctE2ORon/GDxqZQmSvrl9JCwiUE/THbxXxVUBu8\\nk8RPg6W7H/xizvEXHksC0hISL3Gv95bCVCuOVP7Xaf09VuRLyVlvvKebsl3V0nR0\\nIrdF2/vSqse/qut+2ts+C82bCQKBgQDx26Qw1HZjeMpvtX8zORH/hNGkbVGiHf5+\\nk1/5NB/XeCKnscuV/kuyMKWHMbsjp4h9p6m6TRu6hszECp6h9R5tcZXopqKDxKVd\\nGapIiXRuYnm2uWTZuqSQ4NU1exTxwDWXIfp089UCUtV5RzfMHa/+hJ2tK/Yyg5s/\\nzlOJOZ2StwKBgGIVBppXbPQdPAI9/vU1RKKirrqqIrGecqlRA2jnAigMSp46xBGJ\\nh1HTG81CgUPKbBbbWoR3EpCSPmV2heT87pI/ORKftQ/fmg97p6ES59FIBTxuGiF+\\nBO4jmGtNMGNpo3UuU6fz9sZAK6+Go4rPfC2cYNXN3cbMGASmv+EgMBqJAoGAYkwu\\ns1nmtA8H19cgV6U+V2eX/QghQY6HPNKREyvINT6ydw2f/NpZ0ZZL8GKZ+KfCpa9b\\nIEjumCTpXFQknRaOw1SC5Qe0zXFC9E/WEZ0sISEM7uLyxjtBX1DB1varUIYaQc6h\\niJ8BV+xqrtvvJZp7SSqFGzje2zD6DDjDYuZz0IkCgYBIn7vuOy/cKghY9xVv9gCP\\nD8J4GY+mt5LXj6dfo6M1x+TOXZxGJY4BxDwTrERBQLEZQCUEzzv+lID7hq2s6sCA\\nzaAqvwGaWrXQ+dr9cADhABU+I2Yc1Zvul2GiCpOpShnaysg51+1lGfKP8IgNa2Ae\\njDV5XFrOZiQrVvYHmXJaxA==\\n-----END PRIVATE KEY-----"
-        client_email = "plo-assessment@gcm-downscaling.iam.gserviceaccount.com"
-        client_id = "114050464627282033473"
-        auth_uri = "https://accounts.google.com/o/oauth2/auth"
-        token_uri = "https://oauth2.googleapis.com/token"
-        auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-        client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/plo-assessment%40gcm-downscaling.iam.gserviceaccount.com"
-        universe_domain = "googleapis.com"
+        **2. Duplicate Detection**
+        - ตรวจสอบเนื้อหาซ้ำด้วย Content Hash
+        - แจ้งเตือนเมื่อพบข้อมูลซ้ำ
+        - ให้เลือกว่าจะบันทึกต่อหรือไม่
         
-        # Optional: Add OpenAI API key if using AI features
-        OPENAI_API_KEY = "sk-your-api-key-here"
-        ```
+        **3. Enhanced Data Structure**
+        - เพิ่ม Timestamp ในทุก Sheet
+        - บันทึก Content Hash สำหรับตรวจสอบ
+        - ข้อมูลการแปลผลที่ละเอียดขึ้น
         
-        **สำหรับ Streamlit Cloud:**
-        1. ไปที่ App settings → Secrets
-        2. วางข้อมูลด้านบนทั้งหมด
-        3. บันทึกและ Reboot app
+        **4. Improved Analytics**
+        - แยกข้อมูลไม่ซ้ำกับข้อมูลซ้ำ
+        - แสดงแนวโน้มคะแนนแบบกราฟ
+        - วิเคราะห์ความถี่ของการแปลผล
         
-        ### 🆕 ฟีเจอร์พิเศษ: Auto Google Sheets
+        ### 1. การเตรียมเนื้อหา
+        - รองรับไฟล์: PDF, PowerPoint, Text files
+        - ควรมีคำสำคัญที่สอดคล้องกับ CLO
+        - เนื้อหาควรครอบคลุมวัตถุประสงค์การเรียนรู้
+        - **ใหม่**: ระบบจะสร้าง Content Hash เพื่อตรวจสอบความซ้ำ
         
-        **การเชื่อมต่ออัตโนมัติ:**
-        - ระบบเชื่อมต่อ Google Sheets อัตโนมัติเมื่อเปิดโปรแกรม
-        - ใช้ Service Account ที่ฝังไว้ในระบบ
-        - สร้าง/เปิด Spreadsheet "PLO_Assessment" อัตโนมัติ
-        - ไม่ต้องตั้งค่าอะไรเพิ่มเติม
+        ### 2. การตั้งค่า Google Sheets (Enhanced)
+        - สร้าง Service Account ใน Google Cloud Console
+        - เปิดใช้งาน Google Sheets API และ Google Drive API
+        - อัพโหลด JSON credentials หรือวาง JSON content
+        - สร้างหรือเลือก Spreadsheet สำหรับเก็บข้อมูล
+        - **ใหม่**: ระบบจะสร้างโครงสร้าง Sheet ที่ปรับปรุงใหม่
         
-        **การบันทึกอัตโนมัติ:**
-        - บันทึกผลการประเมินทุกครั้งโดยอัตโนมัติ
-        - สร้าง Unique Assessment ID ไม่ซ้ำกันทุกครั้ง
-        - ตรวจสอบข้อมูลซ้ำด้วย Content Hash
-        - บันทึกครบทุกระดับ: CLO, PLO, YLO, Interpretation
+        ### 3. การวิเคราะห์ (Enhanced)
+        - **Rule-based**: วิเคราะห์ตามคำสำคัญและโครงสร้าง
+        - **AI Enhanced**: วิเคราะห์เชิงลึกด้วย AI (ต้องมี API key)
+        - **Auto-save with Unique ID**: บันทึกผลลง Google Sheets ด้วย ID ไม่ซ้ำ
+        - **Duplicate Check**: ตรวจสอบข้อมูลซ้ำอัตโนมัติ
         
-        ### 1. การใช้งานพื้นฐาน
+        ### 4. การจัดการข้อมูล (Enhanced)
+        - **ประวัติการประเมิน**: ดูการประเมินพร้อมสถานะข้อมูลซ้ำ
+        - **วิเคราะห์ข้อมูล**: สถิติที่แยกข้อมูลซ้ำและไม่ซ้ำ
+        - **การแปลผล**: ดูการแปลผลโดยรวมและแนวโน้ม
+        - **ดาวน์โหลด**: ส่งออกข้อมูลเป็น CSV (ทั้งหมดหรือไม่ซ้ำ)
         
-        **ขั้นตอนการประเมิน:**
-        1. เลือกรายวิชาที่ต้องการประเมิน
-        2. เลือกวิธีป้อนข้อมูล (ไฟล์ หรือพิมพ์เอง)
-        3. กดปุ่มวิเคราะห์
-        4. ระบบจะบันทึกผลลง Google Sheets อัตโนมัติ
-        5. ดูผลการประเมินและคำแนะนำ
+        ### 5. การอ่านผล
+        - **CLO**: ความสอดคล้องกับวัตถุประสงค์รายวิชา (4 CLOs ต่อรายวิชา)
+        - **PLO**: ความสอดคล้องกับผลการเรียนรู้หลักสูตร
+        - **YLO**: ความสอดคล้องกับผลการเรียนรู้ชั้นปี
+        - **Assessment ID**: รหัสติดตามการประเมินแต่ละครั้ง
         
-        ### 2. โครงสร้างข้อมูลใน Google Sheets
-        
-        **Sheets ที่สร้างอัตโนมัติ:**
-        - Assessment_Summary: สรุปผลการประเมิน
-        - CLO_Details: รายละเอียดคะแนน CLO
-        - PLO_Details: รายละเอียดคะแนน PLO
-        - YLO_Details: รายละเอียดคะแนน YLO
-        - Content_Analysis: ข้อมูลการวิเคราะห์เนื้อหา
-        - Interpretation: การแปลผลโดยรวม
-        
-        ### 3. การตรวจสอบข้อมูล
-        
-        **ดูข้อมูลใน Google Sheets:**
-        - คลิก link "View Spreadsheet" ที่แสดงด้านบน
-        - เปิด Google Sheets "PLO_Assessment"
-        - ดูข้อมูลแยกตาม sheet ต่างๆ
-        
-        **ดูประวัติในระบบ:**
-        - ไปที่แท็บ "ประวัติการประเมิน"
-        - กรองตามรายวิชาที่ต้องการ
-        - ดาวน์โหลดเป็น CSV ได้
-        
-        ### 4. เกณฑ์การประเมิน
+        ### 6. เกณฑ์การประเมิน
         - 🌟 85%+ = ดีเยี่ยม
         - ✅ 70-84% = ดี
         - ⚠️ 60-69% = ควรปรับปรุง
         - ❌ <60% = ต้องปรับปรุง
         
-        ### 5. การแก้ปัญหาเบื้องต้น
+        ### 7. โครงสร้างข้อมูลใน Google Sheets (Enhanced)
+        - **Assessment_Summary**: สรุปผลการประเมิน + Content_Hash + Unique_Assessment
+        - **CLO_Details**: รายละเอียดคะแนน CLO + Timestamp_Created
+        - **PLO_Details**: รายละเอียดคะแนน PLO + Timestamp_Created
+        - **YLO_Details**: รายละเอียดคะแนน YLO + Timestamp_Created
+        - **Content_Analysis**: ข้อมูลการวิเคราะห์ + Is_Duplicate + Original_Assessment_ID
+        - **Interpretation**: การแปลผลโดยรวม จุดเด่น จุดอ่อน คำแนะนำ
         
-        **ปัญหา:** "⚠️ Google Sheets not initialized" หรือ "Service account not found in secrets"
-        **แก้:** 
-        1. ตรวจสอบว่าสร้างไฟล์ `.streamlit/secrets.toml` แล้ว
-        2. ตรวจสอบว่าคัดลอก service account credentials ถูกต้อง
-        3. ตรวจสอบว่า private_key มี `\\n` แทน line breaks
-        4. Restart Streamlit app
+        ### 8. การติดตั้งระบบ
         
-        **ปัญหา:** "Error 403: The caller does not have permission"
-        **แก้:** 
-        1. เปิดใช้งาน Google Sheets API และ Google Drive API ใน Google Cloud Console
-        2. ถ้ามี spreadsheet อยู่แล้ว ให้ share กับ `plo-assessment@gcm-downscaling.iam.gserviceaccount.com`
+        **Dependencies ที่จำเป็น:**
+        ```bash
+        pip install streamlit pandas plotly gspread google-auth
+        ```
         
-        **ปัญหา:** ไม่เห็นข้อมูลใน Google Sheets
-        **แก้:** รอสักครู่แล้ว refresh หน้า Google Sheets
+        **การตั้งค่า Secrets (สำหรับ local):**
+        สร้างไฟล์ `.streamlit/secrets.toml`:
+        ```toml
+        OPENAI_API_KEY = "sk-your-openai-api-key"
+        ```
         
-        **ปัญหา:** Error saving to Google Sheets
-        **แก้:** ตรวจสอบการเชื่อมต่ออินเทอร์เน็ต
+        **การรันระบบ:**
+        ```bash
+        streamlit run enhanced_assessment_app.py
+        ```
         
-        **ปัญหา:** ข้อมูลซ้ำ
-        **แก้:** ระบบจะแจ้งเตือนและให้เลือกว่าจะบันทึกต่อหรือไม่
+        ### 9. ฟีเจอร์หลัก (Enhanced)
         
-        ### 6. ข้อมูลเพิ่มเติม
+        #### 🎯 การประเมินแบบหลายระดับ
+        - วิเคราะห์เนื้อหาตาม CLO → PLO → YLO
+        - แสดงผลด้วย Gauge Charts และ Sankey Diagrams
+        - การแปลผลอัตโนมัติพร้อมคำแนะนำ
+        - **ใหม่**: Unique Assessment ID tracking
         
-        **Service Account Email:**
-        `plo-assessment@gcm-downscaling.iam.gserviceaccount.com`
+        #### 🤖 AI Enhancement
+        - วิเคราะห์เนื้อหาด้วย AI (ถ้ามี OpenAI API)
+        - ความมั่นใจ AI สูงถึง 99.5%
+        - ข้อเสนอแนะอัจฉริยะ
+        - **ใหม่**: Content Hash integration
         
-        **Spreadsheet Name:**
-        `PLO_Assessment`
+        #### 📊 Google Sheets Integration (Enhanced)
+        - บันทึกผลการประเมินด้วย Unique ID
+        - ตรวจสอบข้อมูลซ้ำอัตโนมัติ
+        - ติดตามประวัติการประเมินแบบละเอียด
+        - วิเคราะห์แนวโน้มรายวิชา
+        - ส่งออกข้อมูลเป็น CSV (แยกซ้ำ/ไม่ซ้ำ)
+        - บันทึกการแปลผลโดยรวม
         
-        **Required Google APIs:**
-        - Google Sheets API
-        - Google Drive API
-
+        #### 📈 Analytics Dashboard (Enhanced)
+        - สถิติการประเมินแต่ละรายวิชาที่แยกข้อมูลซ้ำ
+        - เปรียบเทียบผลการประเมินย้อนหลัง
+        - แนวโน้มการปรับปรุงเนื้อหาแบบกราฟ
+        - วิเคราะห์จุดเด่น จุดอ่อนที่พบบ่อย
+        - **ใหม่**: Unique vs Duplicate analytics
         
-        **Support:**
-        หากพบปัญหาการใช้งาน โปรดติดต่อผู้ดูแลระบบ
+        ### 10. การแก้ปัญหาเบื้องต้น (Enhanced)
+        
+        **ปัญหา:** Import Error gspread
+        **แก้:** `pip install gspread google-auth`
+        
+        **ปัญหา:** Google Sheets connection failed
+        **แก้:** ตรวจสอบ Service Account credentials และ API permissions
+        
+        **ปัญหา:** AI analysis ไม่ทำงาน
+        **แก้:** ตรวจสอบ OpenAI API key ใน secrets.toml
+        
+        **ปัญหา:** Duplicate detection ไม่ทำงาน
+        **แก้:** ตรวจสอบ Content_Analysis sheet structure
+        
+        **ปัญหา:** Unique ID ไม่สร้าง
+        **แก้:** ตรวจสอบ datetime และ uuid modules
+        
+        **ปัญหา:** Streamlit หน่วง
+        **แก้:** ลด cache ด้วย `streamlit cache clear`
+        
+        ### 11. Best Practices (ใหม่)
+        
+        **การจัดการข้อมูล:**
+        - ตรวจสอบ Assessment ID ก่อนบันทึก
+        - ใช้ Content Hash เพื่อตรวจสอบความซ้ำ
+        - บันทึกข้อมูลสำคัญก่อนปิดระบบ
+        
+        **การวิเคราะห์:**
+        - ใช้ข้อมูลไม่ซ้ำสำหรับการวิเคราะห์แนวโน้ม
+        - เปรียบเทียบผลการประเมินด้วย Assessment ID
+        - ติดตาม Content Hash เพื่อหาเนื้อหาที่คล้ายกัน
+        
+        **การรายงาน:**
+        - ใช้ Assessment ID ในการอ้างอิงผลการประเมิน
+        - ระบุสถานะข้อมูล (ซ้ำ/ไม่ซ้ำ) ในรายงาน
+        - บันทึกเวลาการประเมินเพื่อการติดตาม
         """)
         
+        # Enhanced system information
         st.markdown("---")
-        st.markdown("### ℹ️ ข้อมูลระบบ")
+        st.markdown("### ℹ️ ข้อมูลระบบ (Enhanced)")
         
         col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.markdown("**🔧 เวอร์ชัน**")
-            st.write("• v5.0 Auto GSheets")
+            st.write("• v4.0 Enhanced")
             st.write("• Unique ID System")
-            st.write("• Auto-save Feature")
+            st.write("• Duplicate Detection")
         
         with col2:
             st.markdown("**📊 คุณสมบัติ**")
             st.write("• 4 CLOs ต่อรายวิชา")
             st.write("• Multi-level Analysis")
-            st.write("• Auto Google Sheets")
+            st.write("• Enhanced Auto-save")
         
         with col3:
             st.markdown("**🎯 รายวิชา**")
@@ -2993,10 +3664,10 @@ def main():
             st.write("• 7 YLOs")
         
         with col4:
-            st.markdown("**💾 การบันทึก**")
-            st.write("• Auto-save enabled")
-            st.write("• Duplicate detection")
-            st.write("• Complete tracking")
+            st.markdown("**🆕 ฟีเจอร์ใหม่**")
+            st.write("• Unique Assessment ID")
+            st.write("• Content Hash Tracking")
+            st.write("• Duplicate Detection")
         
         st.markdown('</div>', unsafe_allow_html=True)
 
