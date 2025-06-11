@@ -1083,7 +1083,7 @@ def create_enhanced_gauge_chart(score, title="Score", confidence=None):
     )
     return fig
 
-def create_multi_level_dashboard(results):
+def create_multi_level_dashboard(results, key_prefix=""):
     """Create comprehensive multi-level dashboard with enhanced features"""
     st.header("🎯 Multi-Level Learning Outcome Assessment")
     
@@ -1121,7 +1121,7 @@ def create_multi_level_dashboard(results):
             "CLO Average",
             confidence if results.get('ai_enhanced') else None
         )
-        st.plotly_chart(fig_clo, use_container_width=True)
+        st.plotly_chart(fig_clo, use_container_width=True, key=f"{key_prefix}_clo_gauge")
     
     with col2:
         plo_avg = results['overall_scores']['plo_average']
@@ -1130,7 +1130,7 @@ def create_multi_level_dashboard(results):
             "PLO Average",
             confidence if results.get('ai_enhanced') else None
         )
-        st.plotly_chart(fig_plo, use_container_width=True)
+        st.plotly_chart(fig_plo, use_container_width=True, key=f"{key_prefix}_plo_gauge")
     
     with col3:
         ylo_avg = results['overall_scores']['ylo_average']
@@ -1139,7 +1139,7 @@ def create_multi_level_dashboard(results):
             "YLO Average",
             confidence if results.get('ai_enhanced') else None
         )
-        st.plotly_chart(fig_ylo, use_container_width=True)
+        st.plotly_chart(fig_ylo, use_container_width=True, key=f"{key_prefix}_ylo_gauge")
     
     # Enhanced Overall Status with calculation explanation
     overall_avg = (results['overall_scores']['clo_average'] + 
@@ -1167,16 +1167,16 @@ def create_multi_level_dashboard(results):
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📋 CLO Analysis", "🎯 PLO Analysis", "📈 YLO Analysis", "🔗 Alignment Matrix", "📊 การแปลผลโดยรวม"])
     
     with tab1:
-        display_enhanced_clo_analysis(results['clo_results'])
+        display_enhanced_clo_analysis(results['clo_results'], key_prefix)
     
     with tab2:
-        display_plo_analysis(results['plo_results'])
+        display_plo_analysis(results['plo_results'], key_prefix)
     
     with tab3:
-        display_ylo_analysis(results['ylo_results'])
+        display_ylo_analysis(results['ylo_results'], key_prefix)
     
     with tab4:
-        display_alignment_matrix(results)
+        display_alignment_matrix(results, key_prefix)
     
     with tab5:
         display_comprehensive_interpretation(results)
@@ -1245,7 +1245,7 @@ def create_multi_file_dashboard(aggregated_results):
             yaxis_title="Score (%)",
             height=400
         )
-        st.plotly_chart(fig_clo, use_container_width=True)
+        st.plotly_chart(fig_clo, use_container_width=True, key="multi_file_clo_comparison")
     
     with col2:
         # Completeness Pie Chart
@@ -1263,7 +1263,7 @@ def create_multi_file_dashboard(aggregated_results):
             title="Learning Outcome Completeness",
             height=400
         )
-        st.plotly_chart(fig_complete, use_container_width=True)
+        st.plotly_chart(fig_complete, use_container_width=True, key="multi_file_completeness")
     
     # Coverage Analysis
     st.subheader("📈 Coverage Analysis")
@@ -1326,7 +1326,7 @@ def create_multi_file_dashboard(aggregated_results):
                      'threshold' : {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 20}}
         ))
         fig_improve.update_layout(height=250)
-        st.plotly_chart(fig_improve, use_container_width=True)
+        st.plotly_chart(fig_improve, use_container_width=True, key="multi_file_improvement_gauge")
     
     with col2:
         st.write("**Improvement by Level:**")
@@ -1425,7 +1425,7 @@ def display_clo_interpretation(clo_results):
     interpretation_df = pd.DataFrame(interpretation_data)
     st.dataframe(interpretation_df, use_container_width=True, hide_index=True)
 
-def display_enhanced_clo_analysis(clo_results):
+def display_enhanced_clo_analysis(clo_results, key_prefix=""):
     """Display enhanced CLO analysis with AI insights using gauge charts"""
     st.subheader("📋 Course Learning Outcomes (CLO) Analysis")
     
@@ -1449,7 +1449,7 @@ def display_enhanced_clo_analysis(clo_results):
                 f"{clo_code} Alignment", 
                 confidence if clo_data.get('ai_enhanced') else None
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_clo_{clo_code}_gauge")
             
             # Status indicator
             if score >= 85:
@@ -1506,7 +1506,7 @@ def display_enhanced_clo_analysis(clo_results):
                 else:
                     st.error("Needs Improvement")
 
-def display_plo_analysis(plo_results):
+def display_plo_analysis(plo_results, key_prefix=""):
     """Display Program Learning Outcome analysis with gauge charts"""
     st.subheader("🎯 Program Learning Outcomes (PLO) Analysis")
     
@@ -1530,7 +1530,7 @@ def display_plo_analysis(plo_results):
                 f"{plo_code}\n{ENHANCED_PLOS[plo_code]['title'][:20]}...",
                 confidence
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_plo_{plo_code}_gauge")
             
             # Status indicator  
             if score >= 85:
@@ -1559,7 +1559,7 @@ def display_plo_analysis(plo_results):
                 st.metric(f"{plo_code} Score", f"{score:.1f}%")
                 st.metric("Confidence", f"{confidence*100:.0f}%")
 
-def display_ylo_analysis(ylo_results):
+def display_ylo_analysis(ylo_results, key_prefix=""):
     """Display Year Learning Outcome analysis with gauge charts"""
     st.subheader("📈 Year Learning Outcomes (YLO) Analysis")
     
@@ -1588,7 +1588,7 @@ def display_ylo_analysis(ylo_results):
                     f"{ylo_code}\n{ylo_data['cognitive_level']}",
                     confidence
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_ylo_{ylo_code}_gauge")
                 
                 # Status indicator
                 if score >= 85:
@@ -1614,7 +1614,7 @@ def display_ylo_analysis(ylo_results):
                     f"{ylo_code}\n{ylo_data['cognitive_level']}",
                     confidence
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_ylo_{ylo_code}_gauge")
                 
                 # Status indicator
                 if score >= 85:
@@ -1645,7 +1645,7 @@ def display_ylo_analysis(ylo_results):
                 st.metric(f"{ylo_code} Score", f"{score:.1f}%")
                 st.metric("Confidence", f"{confidence*100:.0f}%")
 
-def display_alignment_matrix(results):
+def display_alignment_matrix(results, key_prefix=""):
     """Display alignment matrix visualization"""
     st.subheader("🔗 Learning Outcome Alignment Matrix")
     
@@ -1733,7 +1733,7 @@ def display_alignment_matrix(results):
             font_size=12,
             height=500
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key=f"{key_prefix}_sankey")
     
     # Enhanced Alignment Summary Table
     st.subheader("📋 Alignment Summary")
@@ -2394,7 +2394,7 @@ def main():
         # Display results if available
         if results:
             st.markdown("---")
-            create_multi_level_dashboard(results)
+            create_multi_level_dashboard(results, key_prefix="single_tab1")
             
             # Recommendations
             st.markdown("---")
@@ -2425,7 +2425,7 @@ def main():
         if hasattr(st.session_state, 'analysis_mode'):
             if st.session_state.analysis_mode == 'single' and hasattr(st.session_state, 'analysis_results'):
                 st.subheader("📊 Single File Analysis Results")
-                create_multi_level_dashboard(st.session_state.analysis_results)
+                create_multi_level_dashboard(st.session_state.analysis_results, key_prefix="tab3_single")
             elif st.session_state.analysis_mode == 'multiple' and hasattr(st.session_state, 'aggregated_results'):
                 st.subheader("📊 Multi-File Aggregated Results")
                 create_multi_file_dashboard(st.session_state.aggregated_results)
@@ -2439,9 +2439,9 @@ def main():
                     selected_file = st.selectbox("Select file to view details:", file_names)
                     
                     # Find and display selected file results
-                    for assessment in st.session_state.file_assessments:
+                    for i, assessment in enumerate(st.session_state.file_assessments):
                         if assessment['file_name'] == selected_file:
-                            create_multi_level_dashboard(assessment)
+                            create_multi_level_dashboard(assessment, key_prefix=f"tab3_multi_{i}")
                             break
         else:
             st.info("ยังไม่มีผลการวิเคราะห์ กรุณาทำการประเมินในแท็บ 'การประเมิน' หรือ 'วิเคราะห์หลายไฟล์'")
