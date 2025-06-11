@@ -2418,7 +2418,7 @@ def main():
         # Display aggregated results if available
         if aggregated_results:
             st.markdown("---")
-            create_multi_file_dashboard(aggregated_results)
+            create_multi_file_dashboard(aggregated_results, dashboard_key="tab2")
     
     with tab3:
         # Display analysis results
@@ -2428,7 +2428,7 @@ def main():
                 create_multi_level_dashboard(st.session_state.analysis_results, key_prefix="tab3_single")
             elif st.session_state.analysis_mode == 'multiple' and hasattr(st.session_state, 'aggregated_results'):
                 st.subheader("📊 Multi-File Aggregated Results")
-                create_multi_file_dashboard(st.session_state.aggregated_results)
+                create_multi_file_dashboard(st.session_state.aggregated_results, dashboard_key="tab3")
                 
                 # Option to view individual file results
                 if hasattr(st.session_state, 'file_assessments'):
