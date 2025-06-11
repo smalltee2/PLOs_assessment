@@ -1182,7 +1182,7 @@ def create_multi_level_dashboard(results, key_prefix=""):
         display_comprehensive_interpretation(results)
 
 # NEW: Multi-File Results Dashboard
-def create_multi_file_dashboard(aggregated_results):
+def create_multi_file_dashboard(aggregated_results, key_prefix=""):
     """Create dashboard for multi-file aggregated results"""
     st.header("📁 Multi-File Aggregated Assessment Results")
     
