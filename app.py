@@ -459,6 +459,7 @@ if GSHEETS_AVAILABLE:
             self.client = None
             self.initialized = False
             self.spreadsheet = None
+            self.error_message = None
             # Auto-initialize on creation
             self.auto_initialize()
         
@@ -489,7 +490,8 @@ if GSHEETS_AVAILABLE:
                 return True
                 
             except Exception as e:
-                # Don't use st.error here as it might be called before set_page_config
+                # Store error message for later display
+                self.error_message = str(e)
                 print(f"Failed to auto-initialize Google Sheets: {str(e)}")
                 return False
         
@@ -2477,6 +2479,9 @@ def main():
             gsheets_status += f" | [View Spreadsheet]({sheets_manager.spreadsheet.url})"
     else:
         gsheets_status = " | ⚠️ Google Sheets not connected"
+        # Show error if available
+        if sheets_manager and hasattr(sheets_manager, 'error_message') and sheets_manager.error_message:
+            st.error(f"Google Sheets Error: {sheets_manager.error_message}")
     
     # Header
     st.markdown(f"""
@@ -2538,10 +2543,23 @@ def main():
                 st.success(f"✅ Auto-saving to: {TARGET_SPREADSHEET_NAME}")
             else:
                 st.error("❌ Google Sheets not connected")
+                # Show debug info
+                if not GSHEETS_AVAILABLE:
+                    st.warning("Google Sheets libraries not installed")
+                elif not sheets_manager:
+                    st.warning("Sheets manager not created")
+                elif hasattr(sheets_manager, 'error_message') and sheets_manager.error_message:
+                    st.error(f"Error: {sheets_manager.error_message}")
         with col3:
             # Show current time
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             st.info(f"⏰ เวลาปัจจุบัน: {current_time}")
+            
+            # Add retry button if Google Sheets failed
+            if GSHEETS_AVAILABLE and sheets_manager and not sheets_manager.initialized:
+                if st.button("🔄 Retry Google Sheets Connection"):
+                    sheets_manager.auto_initialize()
+                    st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Course Selection
