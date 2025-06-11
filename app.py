@@ -27,21 +27,6 @@ GOOGLE_SHEETS_SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-# Service Account Credentials (embedded for auto-connection)
-SERVICE_ACCOUNT_INFO = {
-    "type": "service_account",
-    "project_id": "gcm-downscaling",
-    "private_key_id": "f885cad7cb9c36ab8087e76ca6711985286113f4",
-    "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDotI/yNT11UqVn\nRPnHyMfUZaxQqQmn2JyI3/LcP9opntJakmY9iT7BpW0SuVwbhZ5/E1zopsaojMSX\n90W62GhniRjQRznq4n+C5VLa6a1rJe+dHz9ypXwH6+uU85Z7hB++WeXA2UK8Sl5v\nUNHH2aWcPs23cFGHYLMFlzsuGuLlfvsxyDIu1N61CLNAxAH2KYdGjmaPlgi/GZ73\nyV4hS+gL/y3OuFWtPdt0KXrZtL3JkfILSmS689yuWjIrr5MHRfwPGVnUtzdAv6Rl\nA/QlqGIxC46f3k54jnvuMO6HXf9v4Rfrt8PzYWFlz30YAwtG6XqEEG0ULccHzre0\nA4PH6fVvAgMBAAECggEAbwVuQ6045BeJCEr1LGbTR7c2TclH7QdAL2FA+emQyRiX\n3VRJaQRop3SoJC3BDvRh2NjBE9I1p0Z5qNL1Np52uSbEauIAdNqY4TdNn1mrPhp8\nRicZWzYuhYz9+TN50PYJOwSiw64j07dbdJpHa6SgCXpBJUp16zOsVXeAaY+0Pq68\ne9TZ6hSCHC4+alLJp1YctkNEUK96nZfdkg4JCXHKX4v56l5cQrEZQwhu+eoRYqnQ\niO130dXScIkdoNvLrpzlBw8rA3CAVQz4ihabWsxtW0C5LJSFcEO88syFbavj++cW\nl1gOtVh1CkuY+eYouLM45xSfPRd0ojFfVNaIFW4tEQKBgQD2T+pVlC+hdRQJKYQY\n9S2zp8RA3oiG6YdwME8zl7IQSctE2ORon/GDxqZQmSvrl9JCwiUE/THbxXxVUBu8\nk8RPg6W7H/xizvEXHksC0hISL3Gv95bCVCuOVP7Xaf09VuRLyVlvvKebsl3V0nR0\nIrdF2/vSqse/qut+2ts+C82bCQKBgQDx26Qw1HZjeMpvtX8zORH/hNGkbVGiHf5+\nk1/5NB/XeCKnscuV/kuyMKWHMbsjp4h9p6m6TRu6hszECp6h9R5tcZXopqKDxKVd\nGapIiXRuYnm2uWTZuqSQ4NU1exTxwDWXIfp089UCUtV5RzfMHa/+hJ2tK/Yyg5s/\nzlOJOZ2StwKBgGIVBppXbPQdPAI9/vU1RKKirrqqIrGecqlRA2jnAigMSp46xBGJ\nh1HTG81CgUPKbBbbWoR3EpCSPmV2heT87pI/ORKftQ/fmg97p6ES59FIBTxuGiF+\nBO4jmGtNMGNpo3UuU6fz9sZAK6+Go4rPfC2cYNXN3cbMGASmv+EgMBqJAoGAYkwu\ns1nmtA8H19cgV6U+V2eX/QghQY6HPNKREyvINT6ydw2f/NpZ0ZZL8GKZ+KfCpa9b\nIEjumCTpXFQknRaOw1SC5Qe0zXFC9E/WEZ0sISEM7uLyxjtBX1DB1varUIYaQc6h\niJ8BV+xqrtvvJZp7SSqFGzje2zD6DDjDYuZz0IkCgYBIn7vuOy/cKghY9xVv9gCP\nD8J4GY+mt5LXj6dfo6M1x+TOXZxGJY4BxDwTrERBQLEZQCUEzzv+lID7hq2s6sCA\nzaAqvwGaWrXQ+dr9cADhABU+I2Yc1Zvul2GiCpOpShnaysg51+1lGfKP8IgNa2Ae\njDV5XFrOZiQrVvYHmXJaxA==\n-----END PRIVATE KEY-----\n",
-    "client_email": "plo-assessment@gcm-downscaling.iam.gserviceaccount.com",
-    "client_id": "114050464627282033473",
-    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-    "token_uri": "https://oauth2.googleapis.com/token",
-    "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-    "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/plo-assessment%40gcm-downscaling.iam.gserviceaccount.com",
-    "universe_domain": "googleapis.com"
-}
-
 # Target spreadsheet name
 TARGET_SPREADSHEET_NAME = "PLO_Assessment"
 
@@ -460,15 +445,32 @@ if GSHEETS_AVAILABLE:
             self.initialized = False
             self.spreadsheet = None
             self.error_message = None
-            # Auto-initialize on creation
-            self.auto_initialize()
+            # Don't auto-initialize in __init__ to avoid st.secrets error
         
         def auto_initialize(self):
             """Automatically initialize connection and set up spreadsheet"""
             try:
-                # Create credentials from embedded service account info
+                # Get service account info from Streamlit secrets
+                service_account_info = None
+                
+                # Try to access secrets
+                if hasattr(st, 'secrets'):
+                    if "gcp_service_account" in st.secrets:
+                        service_account_info = dict(st.secrets["gcp_service_account"])
+                    else:
+                        self.error_message = "Service account not found in secrets. Please add [gcp_service_account] to secrets.toml"
+                        return False
+                else:
+                    self.error_message = "Streamlit secrets not available"
+                    return False
+                
+                if not service_account_info:
+                    self.error_message = "Service account credentials are empty"
+                    return False
+                
+                # Create credentials from service account info in secrets
                 credentials = Credentials.from_service_account_info(
-                    SERVICE_ACCOUNT_INFO, scopes=GOOGLE_SHEETS_SCOPES
+                    service_account_info, scopes=GOOGLE_SHEETS_SCOPES
                 )
                 
                 # Initialize gspread client
@@ -481,7 +483,7 @@ if GSHEETS_AVAILABLE:
                 except gspread.SpreadsheetNotFound:
                     # Create new spreadsheet
                     self.spreadsheet = self.client.create(TARGET_SPREADSHEET_NAME)
-                    # Share with yourself or make it accessible
+                    # Optionally share with specific email
                     # self.spreadsheet.share('your-email@gmail.com', perm_type='user', role='writer')
                 
                 # Setup sheets structure
@@ -2464,6 +2466,8 @@ def main():
     global sheets_manager
     if GSHEETS_AVAILABLE and sheets_manager is None:
         sheets_manager = GoogleSheetsManager()
+        # Try to initialize after creation
+        sheets_manager.auto_initialize()
     
     # Initialize session state
     if 'selected_course_code' not in st.session_state:
@@ -2550,6 +2554,18 @@ def main():
                     st.warning("Sheets manager not created")
                 elif hasattr(sheets_manager, 'error_message') and sheets_manager.error_message:
                     st.error(f"Error: {sheets_manager.error_message}")
+                    with st.expander("🔧 วิธีแก้ไข"):
+                        st.markdown("""
+                        **หากเห็นข้อความ "Service account not found in secrets":**
+                        1. สร้างไฟล์ `.streamlit/secrets.toml` ในโฟลเดอร์โปรเจค
+                        2. เพิ่ม service account credentials ตามรูปแบบในคู่มือ
+                        3. Restart แอพ Streamlit
+                        
+                        **หากใช้ Streamlit Cloud:**
+                        1. ไปที่ Settings → Secrets ในแอพของคุณ
+                        2. เพิ่ม [gcp_service_account] section
+                        3. Reboot แอพ
+                        """)
         with col3:
             # Show current time
             current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -2558,8 +2574,13 @@ def main():
             # Add retry button if Google Sheets failed
             if GSHEETS_AVAILABLE and sheets_manager and not sheets_manager.initialized:
                 if st.button("🔄 Retry Google Sheets Connection"):
-                    sheets_manager.auto_initialize()
-                    st.rerun()
+                    # Try to reinitialize
+                    success = sheets_manager.auto_initialize()
+                    if success:
+                        st.success("✅ Connected successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed: {sheets_manager.error_message}")
         st.markdown('</div>', unsafe_allow_html=True)
         
         # Course Selection
@@ -2829,6 +2850,34 @@ def main():
         st.subheader("📖 คู่มือการใช้งานระบบ (Auto Google Sheets Version)")
         
         st.markdown("""
+        ### 🔐 การตั้งค่า Streamlit Secrets
+        
+        **สำหรับ Local Development:**
+        สร้างไฟล์ `.streamlit/secrets.toml` ในโฟลเดอร์โปรเจค:
+        
+        ```toml
+        [gcp_service_account]
+        type = "service_account"
+        project_id = "gcm-downscaling"
+        private_key_id = "f885cad7cb9c36ab8087e76ca6711985286113f4"
+        private_key = "-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDotI/yNT11UqVn\\nRPnHyMfUZaxQqQmn2JyI3/LcP9opntJakmY9iT7BpW0SuVwbhZ5/E1zopsaojMSX\\n90W62GhniRjQRznq4n+C5VLa6a1rJe+dHz9ypXwH6+uU85Z7hB++WeXA2UK8Sl5v\\nUNHH2aWcPs23cFGHYLMFlzsuGuLlfvsxyDIu1N61CLNAxAH2KYdGjmaPlgi/GZ73\\nyV4hS+gL/y3OuFWtPdt0KXrZtL3JkfILSmS689yuWjIrr5MHRfwPGVnUtzdAv6Rl\\nA/QlqGIxC46f3k54jnvuMO6HXf9v4Rfrt8PzYWFlz30YAwtG6XqEEG0ULccHzre0\\nA4PH6fVvAgMBAAECggEAbwVuQ6045BeJCEr1LGbTR7c2TclH7QdAL2FA+emQyRiX\\n3VRJaQRop3SoJC3BDvRh2NjBE9I1p0Z5qNL1Np52uSbEauIAdNqY4TdNn1mrPhp8\\nRicZWzYuhYz9+TN50PYJOwSiw64j07dbdJpHa6SgCXpBJUp16zOsVXeAaY+0Pq68\\ne9TZ6hSCHC4+alLJp1YctkNEUK96nZfdkg4JCXHKX4v56l5cQrEZQwhu+eoRYqnQ\\niO130dXScIkdoNvLrpzlBw8rA3CAVQz4ihabWsxtW0C5LJSFcEO88syFbavj++cW\\nl1gOtVh1CkuY+eYouLM45xSfPRd0ojFfVNaIFW4tEQKBgQD2T+pVlC+hdRQJKYQY\\n9S2zp8RA3oiG6YdwME8zl7IQSctE2ORon/GDxqZQmSvrl9JCwiUE/THbxXxVUBu8\\nk8RPg6W7H/xizvEXHksC0hISL3Gv95bCVCuOVP7Xaf09VuRLyVlvvKebsl3V0nR0\\nIrdF2/vSqse/qut+2ts+C82bCQKBgQDx26Qw1HZjeMpvtX8zORH/hNGkbVGiHf5+\\nk1/5NB/XeCKnscuV/kuyMKWHMbsjp4h9p6m6TRu6hszECp6h9R5tcZXopqKDxKVd\\nGapIiXRuYnm2uWTZuqSQ4NU1exTxwDWXIfp089UCUtV5RzfMHa/+hJ2tK/Yyg5s/\\nzlOJOZ2StwKBgGIVBppXbPQdPAI9/vU1RKKirrqqIrGecqlRA2jnAigMSp46xBGJ\\nh1HTG81CgUPKbBbbWoR3EpCSPmV2heT87pI/ORKftQ/fmg97p6ES59FIBTxuGiF+\\nBO4jmGtNMGNpo3UuU6fz9sZAK6+Go4rPfC2cYNXN3cbMGASmv+EgMBqJAoGAYkwu\\ns1nmtA8H19cgV6U+V2eX/QghQY6HPNKREyvINT6ydw2f/NpZ0ZZL8GKZ+KfCpa9b\\nIEjumCTpXFQknRaOw1SC5Qe0zXFC9E/WEZ0sISEM7uLyxjtBX1DB1varUIYaQc6h\\niJ8BV+xqrtvvJZp7SSqFGzje2zD6DDjDYuZz0IkCgYBIn7vuOy/cKghY9xVv9gCP\\nD8J4GY+mt5LXj6dfo6M1x+TOXZxGJY4BxDwTrERBQLEZQCUEzzv+lID7hq2s6sCA\\nzaAqvwGaWrXQ+dr9cADhABU+I2Yc1Zvul2GiCpOpShnaysg51+1lGfKP8IgNa2Ae\\njDV5XFrOZiQrVvYHmXJaxA==\\n-----END PRIVATE KEY-----"
+        client_email = "plo-assessment@gcm-downscaling.iam.gserviceaccount.com"
+        client_id = "114050464627282033473"
+        auth_uri = "https://accounts.google.com/o/oauth2/auth"
+        token_uri = "https://oauth2.googleapis.com/token"
+        auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+        client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/plo-assessment%40gcm-downscaling.iam.gserviceaccount.com"
+        universe_domain = "googleapis.com"
+        
+        # Optional: Add OpenAI API key if using AI features
+        OPENAI_API_KEY = "sk-your-api-key-here"
+        ```
+        
+        **สำหรับ Streamlit Cloud:**
+        1. ไปที่ App settings → Secrets
+        2. วางข้อมูลด้านบนทั้งหมด
+        3. บันทึกและ Reboot app
+        
         ### 🆕 ฟีเจอร์พิเศษ: Auto Google Sheets
         
         **การเชื่อมต่ออัตโนมัติ:**
@@ -2882,6 +2931,18 @@ def main():
         
         ### 5. การแก้ปัญหาเบื้องต้น
         
+        **ปัญหา:** "⚠️ Google Sheets not initialized" หรือ "Service account not found in secrets"
+        **แก้:** 
+        1. ตรวจสอบว่าสร้างไฟล์ `.streamlit/secrets.toml` แล้ว
+        2. ตรวจสอบว่าคัดลอก service account credentials ถูกต้อง
+        3. ตรวจสอบว่า private_key มี `\\n` แทน line breaks
+        4. Restart Streamlit app
+        
+        **ปัญหา:** "Error 403: The caller does not have permission"
+        **แก้:** 
+        1. เปิดใช้งาน Google Sheets API และ Google Drive API ใน Google Cloud Console
+        2. ถ้ามี spreadsheet อยู่แล้ว ให้ share กับ `plo-assessment@gcm-downscaling.iam.gserviceaccount.com`
+        
         **ปัญหา:** ไม่เห็นข้อมูลใน Google Sheets
         **แก้:** รอสักครู่แล้ว refresh หน้า Google Sheets
         
@@ -2898,6 +2959,26 @@ def main():
         
         **Spreadsheet Name:**
         `PLO_Assessment`
+        
+        **Required Google APIs:**
+        - Google Sheets API
+        - Google Drive API
+        
+        **secrets.toml structure:**
+        ```
+        [gcp_service_account]
+        type = "service_account"
+        project_id = "your-project-id"
+        private_key_id = "your-key-id"
+        private_key = "-----BEGIN PRIVATE KEY-----\\nyour-private-key\\n-----END PRIVATE KEY-----"
+        client_email = "your-service-account@project.iam.gserviceaccount.com"
+        client_id = "your-client-id"
+        auth_uri = "https://accounts.google.com/o/oauth2/auth"
+        token_uri = "https://oauth2.googleapis.com/token"
+        auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+        client_x509_cert_url = "your-cert-url"
+        universe_domain = "googleapis.com"
+        ```
         
         **Support:**
         หากพบปัญหาการใช้งาน โปรดติดต่อผู้ดูแลระบบ
