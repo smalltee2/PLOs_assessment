@@ -424,94 +424,83 @@ def check_duplicate_assessment(spreadsheet, content_hash, course_code):
         content_sheet = spreadsheet.worksheet('Content_Analysis')
         records = content_sheet.get_all_records()
         
+        # Check for duplicate content + course combination
         for record in records:
             if (record.get('Content_Hash') == content_hash and 
                 record.get('รหัสวิชา') == course_code):
                 return True, record.get('รหัสการประเมิน', 'Unknown')
         
         return False, None
-    except Exception as e:
-        st.error(f"Error checking duplicates: {str(e)}")
+    except:
+        # If can't check, assume no duplicate
         return False, None
 
-# Fixed Google Sheets Manager Class
+# Google Sheets Manager Class with Enhanced Unique Recording
 if GSHEETS_AVAILABLE:
     class GoogleSheetsManager:
-        """Enhanced Google Sheets Manager with better error handling"""
+        """Enhanced Google Sheets Manager with automatic connection"""
         
         def __init__(self):
             self.client = None
             self.initialized = False
             self.spreadsheet = None
             self.error_message = None
-            self.credentials = None
+            # Don't auto-initialize in __init__ to avoid st.secrets error
         
-        def initialize_from_secrets(self):
-            """Initialize using Streamlit secrets with better error handling"""
+        def auto_initialize(self):
+            """Automatically initialize connection and set up spreadsheet"""
             try:
-                # Check if secrets are available
-                if not hasattr(st, 'secrets'):
+                # Get service account info from Streamlit secrets
+                service_account_info = None
+                
+                # Try to access secrets
+                if hasattr(st, 'secrets'):
+                    if "gcp_service_account" in st.secrets:
+                        service_account_info = dict(st.secrets["gcp_service_account"])
+                    else:
+                        self.error_message = "Service account not found in secrets. Please add [gcp_service_account] to secrets.toml"
+                        return False
+                else:
                     self.error_message = "Streamlit secrets not available"
                     return False
                 
-                # Try to get service account info from secrets
-                if "gcp_service_account" not in st.secrets:
-                    self.error_message = """
-                    Service account not found in secrets. Please add to .streamlit/secrets.toml:
-                    
-                    [gcp_service_account]
-                    type = "service_account"
-                    project_id = "your-project-id"
-                    private_key_id = "your-key-id"
-                    private_key = "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----"
-                    client_email = "your-service-account@project.iam.gserviceaccount.com"
-                    ...
-                    """
+                if not service_account_info:
+                    self.error_message = "Service account credentials are empty"
                     return False
                 
-                # Get service account info from secrets
-                service_account_info = dict(st.secrets["gcp_service_account"])
-                
-                # Fix private key format if needed
-                if 'private_key' in service_account_info:
-                    # Replace \\n with actual newlines
-                    service_account_info['private_key'] = service_account_info['private_key'].replace('\\n', '\n')
-                
-                # Create credentials
-                self.credentials = Credentials.from_service_account_info(
-                    service_account_info, 
-                    scopes=GOOGLE_SHEETS_SCOPES
+                # Create credentials from service account info in secrets
+                credentials = Credentials.from_service_account_info(
+                    service_account_info, scopes=GOOGLE_SHEETS_SCOPES
                 )
                 
                 # Initialize gspread client
-                self.client = gspread.authorize(self.credentials)
+                self.client = gspread.authorize(credentials)
+                self.initialized = True
                 
-                # Try to open or create spreadsheet
+                # Try to open or create the target spreadsheet
                 try:
                     self.spreadsheet = self.client.open(TARGET_SPREADSHEET_NAME)
                 except gspread.SpreadsheetNotFound:
                     # Create new spreadsheet
                     self.spreadsheet = self.client.create(TARGET_SPREADSHEET_NAME)
-                    st.info(f"Created new spreadsheet: {TARGET_SPREADSHEET_NAME}")
+                    # Optionally share with specific email
+                    # self.spreadsheet.share('your-email@gmail.com', perm_type='user', role='writer')
                 
                 # Setup sheets structure
-                self.setup_assessment_sheets()
+                self.setup_assessment_sheets(self.spreadsheet)
                 
-                self.initialized = True
                 return True
                 
             except Exception as e:
-                self.error_message = f"Initialization error: {str(e)}"
-                print(f"Google Sheets initialization error: {str(e)}")
+                # Store error message for later display
+                self.error_message = str(e)
+                print(f"Failed to auto-initialize Google Sheets: {str(e)}")
                 return False
         
-        def setup_assessment_sheets(self):
-            """Setup sheets for assessment data"""
+        def setup_assessment_sheets(self, spreadsheet):
+            """Setup sheets for assessment data with enhanced structure"""
             try:
-                if not self.spreadsheet:
-                    return False
-                
-                # Sheet configurations
+                # Enhanced sheet structures
                 sheets_config = {
                     'Assessment_Summary': [
                         'วันที่', 'เวลา', 'รหัสการประเมิน', 'รหัสวิชา', 'ชื่อวิชา', 
@@ -549,48 +538,43 @@ if GSHEETS_AVAILABLE:
                     ]
                 }
                 
-                # Get existing sheets
-                existing_sheets = [sheet.title for sheet in self.spreadsheet.worksheets()]
-                
                 for sheet_name, headers in sheets_config.items():
                     try:
-                        if sheet_name in existing_sheets:
-                            # Sheet exists, check headers
-                            worksheet = self.spreadsheet.worksheet(sheet_name)
-                            current_headers = worksheet.row_values(1) if worksheet.row_count > 0 else []
-                            
-                            # Update headers if different
+                        # Check if sheet exists
+                        try:
+                            worksheet = spreadsheet.worksheet(sheet_name)
+                            # Clear and update headers if sheet exists
+                            current_headers = worksheet.row_values(1)
                             if current_headers != headers:
-                                worksheet.update('A1', [headers])
-                        else:
+                                worksheet.clear()
+                                worksheet.append_row(headers)
+                        except gspread.WorksheetNotFound:
                             # Create new sheet
-                            worksheet = self.spreadsheet.add_worksheet(
+                            worksheet = spreadsheet.add_worksheet(
                                 title=sheet_name, 
                                 rows=1000, 
                                 cols=len(headers)
                             )
-                            worksheet.update('A1', [headers])
+                            worksheet.append_row(headers)
+                            
                     except Exception as e:
-                        st.error(f"Error setting up sheet {sheet_name}: {str(e)}")
                         continue
                 
-                # Remove default Sheet1 if exists and empty
+                # Remove default Sheet1 if exists and is empty
                 try:
-                    if 'Sheet1' in existing_sheets:
-                        sheet1 = self.spreadsheet.worksheet('Sheet1')
-                        if sheet1.row_count <= 1:
-                            self.spreadsheet.del_worksheet(sheet1)
+                    sheet1 = spreadsheet.worksheet('Sheet1')
+                    if len(sheet1.get_all_values()) <= 1:  # Only header or empty
+                        spreadsheet.del_worksheet(sheet1)
                 except:
                     pass
                 
                 return True
                 
             except Exception as e:
-                st.error(f"Error setting up sheets: {str(e)}")
                 return False
         
         def save_assessment_data(self, assessment_data, file_info=None, allow_duplicates=False):
-            """Save assessment results to Google Sheets"""
+            """Enhanced save assessment results with unique ID and duplicate checking"""
             try:
                 if not self.initialized or not self.spreadsheet:
                     return False, "Google Sheets not initialized"
@@ -599,7 +583,7 @@ if GSHEETS_AVAILABLE:
                 unique_assessment_id = generate_unique_assessment_id()
                 assessment_data['assessment_id'] = unique_assessment_id
                 
-                # Check for duplicates
+                # Check for duplicates if not explicitly allowed
                 content_hash = assessment_data.get('content_hash', '')
                 course_code = assessment_data['course_code']
                 
@@ -617,37 +601,42 @@ if GSHEETS_AVAILABLE:
                 time_str = current_time.strftime('%H:%M:%S')
                 timestamp_str = current_time.strftime('%Y-%m-%d %H:%M:%S')
                 
-                # Prepare data for each sheet
-                # 1. Assessment Summary
-                summary_data = [
-                    date_str,
-                    time_str,
-                    unique_assessment_id,
-                    assessment_data['course_code'],
-                    assessment_data['course_name'],
-                    assessment_data.get('assessor', 'ไม่ระบุ'),
-                    file_info.get('type', 'Text Input') if file_info else 'Text Input',
-                    file_info.get('name', 'ป้อนข้อความ') if file_info else 'ป้อนข้อความ',
-                    assessment_data.get('ai_enhanced', False),
-                    assessment_data['overall_scores']['clo_average'],
-                    assessment_data['overall_scores']['plo_average'],
-                    assessment_data['overall_scores']['ylo_average'],
-                    assessment_data['overall_scores'].get('overall_confidence', 0),
+                # 1. Save to Assessment_Summary with enhanced info
+                summary_sheet = self.spreadsheet.worksheet('Assessment_Summary')
+                
+                summary_row = [
+                    date_str,  # วันที่
+                    time_str,  # เวลา
+                    unique_assessment_id,  # รหัสการประเมิน (UNIQUE)
+                    assessment_data['course_code'],  # รหัสวิชา
+                    assessment_data['course_name'],  # ชื่อวิชา
+                    assessment_data.get('assessor', 'ไม่ระบุ'),  # ผู้ประเมิน
+                    file_info.get('type', 'Text Input') if file_info else 'Text Input',  # ประเภทไฟล์
+                    file_info.get('name', 'ป้อนข้อความ') if file_info else 'ป้อนข้อความ',  # ชื่อไฟล์
+                    assessment_data.get('ai_enhanced', False),  # AI_Enhanced
+                    assessment_data['overall_scores']['clo_average'],  # CLO_Average
+                    assessment_data['overall_scores']['plo_average'],  # PLO_Average
+                    assessment_data['overall_scores']['ylo_average'],  # YLO_Average
+                    assessment_data['overall_scores'].get('overall_confidence', 0),  # Overall_Confidence
                 ]
                 
-                # Add recommendations
+                # Add recommendations (up to 3)
                 recommendations = assessment_data.get('ai_recommendations', [])
                 for i in range(3):
-                    summary_data.append(recommendations[i] if i < len(recommendations) else '')
+                    if i < len(recommendations):
+                        summary_row.append(recommendations[i])
+                    else:
+                        summary_row.append('')
                 
                 # Add content hash and unique flag
-                summary_data.extend([content_hash, not is_duplicate])
+                summary_row.extend([
+                    content_hash,  # Content_Hash
+                    not is_duplicate  # Unique_Assessment
+                ])
                 
-                # Save to Assessment_Summary
-                summary_sheet = self.spreadsheet.worksheet('Assessment_Summary')
-                summary_sheet.append_row(summary_data)
+                summary_sheet.append_row(summary_row)
                 
-                # 2. Save CLO Details
+                # 2. Save CLO Details with timestamp
                 clo_sheet = self.spreadsheet.worksheet('CLO_Details')
                 for clo_code, clo_data in assessment_data['clo_results'].items():
                     clo_row = [
@@ -662,11 +651,11 @@ if GSHEETS_AVAILABLE:
                         clo_data['coverage'],
                         clo_data.get('ai_enhanced', False),
                         '; '.join(clo_data.get('ai_insights', [])),
-                        timestamp_str
+                        timestamp_str  # Timestamp_Created
                     ]
                     clo_sheet.append_row(clo_row)
                 
-                # 3. Save PLO Details
+                # 3. Save PLO Details with timestamp
                 plo_sheet = self.spreadsheet.worksheet('PLO_Details')
                 for plo_code, plo_data in assessment_data['plo_results'].items():
                     plo_row = [
@@ -678,11 +667,11 @@ if GSHEETS_AVAILABLE:
                         plo_data.get('confidence', 0),
                         ', '.join(plo_data['related_clos']),
                         ENHANCED_PLOS[plo_code]['weight'],
-                        timestamp_str
+                        timestamp_str  # Timestamp_Created
                     ]
                     plo_sheet.append_row(plo_row)
                 
-                # 4. Save YLO Details
+                # 4. Save YLO Details with timestamp
                 ylo_sheet = self.spreadsheet.worksheet('YLO_Details')
                 for ylo_code, ylo_data in assessment_data['ylo_results'].items():
                     ylo_row = [
@@ -696,34 +685,36 @@ if GSHEETS_AVAILABLE:
                         ylo_data['cognitive_level'],
                         ', '.join(ylo_data['related_plos']),
                         ylo_data.get('cognitive_multiplier', 1.0),
-                        timestamp_str
+                        timestamp_str  # Timestamp_Created
                     ]
                     ylo_sheet.append_row(ylo_row)
                 
-                # 5. Save Content Analysis
+                # 5. Save Enhanced Content Analysis
                 content_sheet = self.spreadsheet.worksheet('Content_Analysis')
-                content_preview = assessment_data.get('content_preview', '')[:500]
-                if len(assessment_data.get('content_preview', '')) > 500:
-                    content_preview += '...'
-                
                 content_row = [
                     unique_assessment_id,
                     assessment_data['course_code'],
                     content_hash,
                     assessment_data.get('content_length', 0),
                     file_info.get('name', 'ป้อนข้อความ') if file_info else 'ป้อนข้อความ',
-                    content_preview,
+                    assessment_data.get('content_preview', '')[:500] + '...' if len(assessment_data.get('content_preview', '')) > 500 else assessment_data.get('content_preview', ''),
                     'AI Enhanced' if assessment_data.get('ai_enhanced') else 'Rule-based',
                     timestamp_str,
-                    is_duplicate,
-                    original_assessment_id or ''
+                    is_duplicate,  # Is_Duplicate
+                    original_assessment_id or ''  # Original_Assessment_ID
                 ]
                 content_sheet.append_row(content_row)
                 
                 # 6. Save interpretation data
-                self.save_interpretation_data(assessment_data)
+                interpretation_success, interpretation_message = self.save_interpretation_data(
+                    self.spreadsheet, assessment_data
+                )
                 
-                # Success message
+                if not interpretation_success:
+                    # Log warning but don't fail the entire save
+                    print(f"Warning: {interpretation_message}")
+                
+                # Success message with unique ID
                 success_msg = f"✅ Auto-saved to Google Sheets - ID: {unique_assessment_id}"
                 if is_duplicate:
                     success_msg += f" (Duplicate of {original_assessment_id})"
@@ -731,18 +722,20 @@ if GSHEETS_AVAILABLE:
                 return True, success_msg
                 
             except Exception as e:
-                error_msg = f"Error saving to Google Sheets: {str(e)}"
-                st.error(error_msg)
-                return False, error_msg
+                return False, f"Error saving to Google Sheets: {str(e)}"
         
-        def save_interpretation_data(self, assessment_data):
+        def save_interpretation_data(self, spreadsheet, assessment_data):
             """Save interpretation data to Google Sheets"""
             try:
-                interpretation_sheet = self.spreadsheet.worksheet('Interpretation')
+                interpretation_sheet = spreadsheet.worksheet('Interpretation')
+                assessment_id = assessment_data.get('assessment_id', generate_unique_assessment_id())
+                
+                # Generate interpretation data
                 interpretation = self.generate_interpretation_data(assessment_data)
                 
+                # Create row for Interpretation sheet
                 interpretation_row = [
-                    assessment_data.get('assessment_id', generate_unique_assessment_id()),
+                    assessment_id,
                     assessment_data['course_code'],
                     datetime.now().strftime('%Y-%m-%d'),
                     interpretation['overall_result'],
@@ -755,21 +748,26 @@ if GSHEETS_AVAILABLE:
                     interpretation['cognitive_distribution']
                 ]
                 
-                # Add strengths, weaknesses, and recommendations
+                # Add strengths (up to 3)
                 for i in range(3):
-                    interpretation_row.append(
-                        interpretation['strengths'][i] if i < len(interpretation['strengths']) else ''
-                    )
+                    if i < len(interpretation['strengths']):
+                        interpretation_row.append(interpretation['strengths'][i])
+                    else:
+                        interpretation_row.append('')
                 
+                # Add weaknesses (up to 3)
                 for i in range(3):
-                    interpretation_row.append(
-                        interpretation['weaknesses'][i] if i < len(interpretation['weaknesses']) else ''
-                    )
+                    if i < len(interpretation['weaknesses']):
+                        interpretation_row.append(interpretation['weaknesses'][i])
+                    else:
+                        interpretation_row.append('')
                 
+                # Add recommendations (up to 3)
                 for i in range(3):
-                    interpretation_row.append(
-                        interpretation['recommendations'][i] if i < len(interpretation['recommendations']) else ''
-                    )
+                    if i < len(interpretation['recommendations']):
+                        interpretation_row.append(interpretation['recommendations'][i])
+                    else:
+                        interpretation_row.append('')
                 
                 # Add specific issues
                 interpretation_row.extend([
@@ -778,10 +776,13 @@ if GSHEETS_AVAILABLE:
                     interpretation['missing_cognitive_levels']
                 ])
                 
+                # Append row to sheet
                 interpretation_sheet.append_row(interpretation_row)
                 
+                return True, "บันทึกการแปลผลสำเร็จ"
+                
             except Exception as e:
-                st.error(f"Error saving interpretation: {str(e)}")
+                return False, f"เกิดข้อผิดพลาดในการบันทึกการแปลผล: {str(e)}"
         
         def generate_interpretation_data(self, assessment_data):
             """Generate interpretation data from assessment results"""
@@ -2461,37 +2462,12 @@ def main():
         layout="wide"
     )
     
-    # Initialize Google Sheets manager
+    # Initialize Google Sheets manager after set_page_config
     global sheets_manager
     if GSHEETS_AVAILABLE and sheets_manager is None:
         sheets_manager = GoogleSheetsManager()
-        # Try to initialize with secrets
-        if sheets_manager.initialize_from_secrets():
-            st.success("✅ Connected to Google Sheets successfully!")
-        else:
-            st.error("❌ Failed to connect to Google Sheets")
-            if sheets_manager.error_message:
-                with st.expander("🔧 Error Details & How to Fix"):
-                    st.error(sheets_manager.error_message)
-                    st.markdown("""
-                    **To fix this issue:**
-                    
-                    1. **For Local Development:**
-                       - Create `.streamlit/secrets.toml` file in your project folder
-                       - Add your service account credentials (see format above)
-                       - Restart Streamlit
-                    
-                    2. **For Streamlit Cloud:**
-                       - Go to your app settings
-                       - Click on "Secrets" in the left sidebar
-                       - Add the service account JSON under `[gcp_service_account]`
-                       - Reboot your app
-                    
-                    3. **Make sure your service account has:**
-                       - Google Sheets API enabled
-                       - Google Drive API enabled
-                       - Editor permissions on the spreadsheet (if it already exists)
-                    """)
+        # Try to initialize after creation
+        sheets_manager.auto_initialize()
     
     # Initialize session state
     if 'selected_course_code' not in st.session_state:
@@ -2507,6 +2483,9 @@ def main():
             gsheets_status += f" | [View Spreadsheet]({sheets_manager.spreadsheet.url})"
     else:
         gsheets_status = " | ⚠️ Google Sheets not connected"
+        # Show error if available
+        if sheets_manager and hasattr(sheets_manager, 'error_message') and sheets_manager.error_message:
+            st.error(f"Google Sheets Error: {sheets_manager.error_message}")
     
     # Header
     st.markdown(f"""
@@ -2596,7 +2575,7 @@ def main():
             if GSHEETS_AVAILABLE and sheets_manager and not sheets_manager.initialized:
                 if st.button("🔄 Retry Google Sheets Connection"):
                     # Try to reinitialize
-                    success = sheets_manager.initialize_from_secrets()
+                    success = sheets_manager.auto_initialize()
                     if success:
                         st.success("✅ Connected successfully!")
                         st.rerun()
@@ -2879,15 +2858,15 @@ def main():
         ```toml
         [gcp_service_account]
         type = "service_account"
-        project_id = "your-project-id"
-        private_key_id = "your-key-id"
-        private_key = "-----BEGIN PRIVATE KEY-----\\n...your-private-key...\\n-----END PRIVATE KEY-----"
-        client_email = "your-service-account@project.iam.gserviceaccount.com"
-        client_id = "your-client-id"
+        project_id = "gcm-downscaling"
+        private_key_id = "f885cad7cb9c36ab8087e76ca6711985286113f4"
+        private_key = "-----BEGIN PRIVATE KEY-----\\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDotI/yNT11UqVn\\nRPnHyMfUZaxQqQmn2JyI3/LcP9opntJakmY9iT7BpW0SuVwbhZ5/E1zopsaojMSX\\n90W62GhniRjQRznq4n+C5VLa6a1rJe+dHz9ypXwH6+uU85Z7hB++WeXA2UK8Sl5v\\nUNHH2aWcPs23cFGHYLMFlzsuGuLlfvsxyDIu1N61CLNAxAH2KYdGjmaPlgi/GZ73\\nyV4hS+gL/y3OuFWtPdt0KXrZtL3JkfILSmS689yuWjIrr5MHRfwPGVnUtzdAv6Rl\\nA/QlqGIxC46f3k54jnvuMO6HXf9v4Rfrt8PzYWFlz30YAwtG6XqEEG0ULccHzre0\\nA4PH6fVvAgMBAAECggEAbwVuQ6045BeJCEr1LGbTR7c2TclH7QdAL2FA+emQyRiX\\n3VRJaQRop3SoJC3BDvRh2NjBE9I1p0Z5qNL1Np52uSbEauIAdNqY4TdNn1mrPhp8\\nRicZWzYuhYz9+TN50PYJOwSiw64j07dbdJpHa6SgCXpBJUp16zOsVXeAaY+0Pq68\\ne9TZ6hSCHC4+alLJp1YctkNEUK96nZfdkg4JCXHKX4v56l5cQrEZQwhu+eoRYqnQ\\niO130dXScIkdoNvLrpzlBw8rA3CAVQz4ihabWsxtW0C5LJSFcEO88syFbavj++cW\\nl1gOtVh1CkuY+eYouLM45xSfPRd0ojFfVNaIFW4tEQKBgQD2T+pVlC+hdRQJKYQY\\n9S2zp8RA3oiG6YdwME8zl7IQSctE2ORon/GDxqZQmSvrl9JCwiUE/THbxXxVUBu8\\nk8RPg6W7H/xizvEXHksC0hISL3Gv95bCVCuOVP7Xaf09VuRLyVlvvKebsl3V0nR0\\nIrdF2/vSqse/qut+2ts+C82bCQKBgQDx26Qw1HZjeMpvtX8zORH/hNGkbVGiHf5+\\nk1/5NB/XeCKnscuV/kuyMKWHMbsjp4h9p6m6TRu6hszECp6h9R5tcZXopqKDxKVd\\nGapIiXRuYnm2uWTZuqSQ4NU1exTxwDWXIfp089UCUtV5RzfMHa/+hJ2tK/Yyg5s/\\nzlOJOZ2StwKBgGIVBppXbPQdPAI9/vU1RKKirrqqIrGecqlRA2jnAigMSp46xBGJ\\nh1HTG81CgUPKbBbbWoR3EpCSPmV2heT87pI/ORKftQ/fmg97p6ES59FIBTxuGiF+\\nBO4jmGtNMGNpo3UuU6fz9sZAK6+Go4rPfC2cYNXN3cbMGASmv+EgMBqJAoGAYkwu\\ns1nmtA8H19cgV6U+V2eX/QghQY6HPNKREyvINT6ydw2f/NpZ0ZZL8GKZ+KfCpa9b\\nIEjumCTpXFQknRaOw1SC5Qe0zXFC9E/WEZ0sISEM7uLyxjtBX1DB1varUIYaQc6h\\niJ8BV+xqrtvvJZp7SSqFGzje2zD6DDjDYuZz0IkCgYBIn7vuOy/cKghY9xVv9gCP\\nD8J4GY+mt5LXj6dfo6M1x+TOXZxGJY4BxDwTrERBQLEZQCUEzzv+lID7hq2s6sCA\\nzaAqvwGaWrXQ+dr9cADhABU+I2Yc1Zvul2GiCpOpShnaysg51+1lGfKP8IgNa2Ae\\njDV5XFrOZiQrVvYHmXJaxA==\\n-----END PRIVATE KEY-----"
+        client_email = "plo-assessment@gcm-downscaling.iam.gserviceaccount.com"
+        client_id = "114050464627282033473"
         auth_uri = "https://accounts.google.com/o/oauth2/auth"
         token_uri = "https://oauth2.googleapis.com/token"
         auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
-        client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/your-service-account-email"
+        client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/plo-assessment%40gcm-downscaling.iam.gserviceaccount.com"
         universe_domain = "googleapis.com"
         
         # Optional: Add OpenAI API key if using AI features
@@ -2962,7 +2941,7 @@ def main():
         **ปัญหา:** "Error 403: The caller does not have permission"
         **แก้:** 
         1. เปิดใช้งาน Google Sheets API และ Google Drive API ใน Google Cloud Console
-        2. ถ้ามี spreadsheet อยู่แล้ว ให้ share กับ service account email
+        2. ถ้ามี spreadsheet อยู่แล้ว ให้ share กับ `plo-assessment@gcm-downscaling.iam.gserviceaccount.com`
         
         **ปัญหา:** ไม่เห็นข้อมูลใน Google Sheets
         **แก้:** รอสักครู่แล้ว refresh หน้า Google Sheets
@@ -2975,9 +2954,16 @@ def main():
         
         ### 6. ข้อมูลเพิ่มเติม
         
+        **Service Account Email:**
+        `plo-assessment@gcm-downscaling.iam.gserviceaccount.com`
+        
+        **Spreadsheet Name:**
+        `PLO_Assessment`
+        
         **Required Google APIs:**
         - Google Sheets API
         - Google Drive API
+
         
         **Support:**
         หากพบปัญหาการใช้งาน โปรดติดต่อผู้ดูแลระบบ
