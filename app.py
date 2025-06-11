@@ -1245,7 +1245,7 @@ def create_multi_file_dashboard(aggregated_results, key_prefix=""):
             yaxis_title="Score (%)",
             height=400
         )
-        st.plotly_chart(fig_clo, use_container_width=True, key="multi_file_clo_comparison")
+        st.plotly_chart(fig_clo, use_container_width=True, key=f"{key_prefix}_multi_file_clo_comparison")
     
     with col2:
         # Completeness Pie Chart
@@ -1263,7 +1263,7 @@ def create_multi_file_dashboard(aggregated_results, key_prefix=""):
             title="Learning Outcome Completeness",
             height=400
         )
-        st.plotly_chart(fig_complete, use_container_width=True, key="multi_file_completeness")
+        st.plotly_chart(fig_complete, use_container_width=True, key=f"{key_prefix}_multi_file_completeness")
     
     # Coverage Analysis
     st.subheader("📈 Coverage Analysis")
@@ -1326,7 +1326,7 @@ def create_multi_file_dashboard(aggregated_results, key_prefix=""):
                      'threshold' : {'line': {'color': "red", 'width': 4}, 'thickness': 0.75, 'value': 20}}
         ))
         fig_improve.update_layout(height=250)
-        st.plotly_chart(fig_improve, use_container_width=True, key="multi_file_improvement_gauge")
+        st.plotly_chart(fig_improve, use_container_width=True, key=f"{key_prefix}_multi_file_improvement_gauge")
     
     with col2:
         st.write("**Improvement by Level:**")
@@ -2429,7 +2429,7 @@ def main():
                 st.markdown("---")
                 # Use a container to isolate the dashboard
                 with st.container():
-                    create_multi_file_dashboard(aggregated_results)
+                    create_multi_file_dashboard(aggregated_results, key_prefix="tab2")
         except Exception as e:
             st.error(f"Error in multi-file analysis: {str(e)}")
             st.exception(e)
@@ -2442,7 +2442,7 @@ def main():
                 create_multi_level_dashboard(st.session_state.analysis_results, key_prefix="tab3_single")
             elif st.session_state.analysis_mode == 'multiple' and hasattr(st.session_state, 'aggregated_results'):
                 st.subheader("📊 Multi-File Aggregated Results")
-                create_multi_file_dashboard(st.session_state.aggregated_results)
+                create_multi_file_dashboard(st.session_state.aggregated_results, key_prefix="tab3")
                 
                 # Option to view individual file results
                 if hasattr(st.session_state, 'file_assessments'):
