@@ -489,7 +489,8 @@ if GSHEETS_AVAILABLE:
                 return True
                 
             except Exception as e:
-                st.error(f"Failed to auto-initialize Google Sheets: {str(e)}")
+                # Don't use st.error here as it might be called before set_page_config
+                print(f"Failed to auto-initialize Google Sheets: {str(e)}")
                 return False
         
         def setup_assessment_sheets(self, spreadsheet):
@@ -950,10 +951,8 @@ if GSHEETS_AVAILABLE:
             except Exception as e:
                 return None, f"เกิดข้อผิดพลาด: {str(e)}"
 
-# Initialize global Google Sheets manager
+# Global Google Sheets manager (will be initialized in main)
 sheets_manager = None
-if GSHEETS_AVAILABLE:
-    sheets_manager = GoogleSheetsManager()
 
 # AI and File Processing Functions
 def check_ai_availability():
@@ -1462,6 +1461,7 @@ def auto_save_to_sheets(results, file_info=None):
             st.error(f"Error auto-saving: {str(e)}")
             return False, str(e)
     else:
+        # Don't show error if Google Sheets is not available, just skip
         return False, "Google Sheets not available"
 
 def show_file_upload_interface():
@@ -2205,6 +2205,7 @@ def generate_improvement_recommendations(results):
 
 def show_assessment_history():
     """Show assessment history from Google Sheets"""
+    global sheets_manager
     if not GSHEETS_AVAILABLE or not sheets_manager or not sheets_manager.initialized:
         st.warning("Google Sheets integration is not available.")
         return
@@ -2337,6 +2338,7 @@ def show_assessment_history():
 
 def show_course_analytics():
     """Show analytics for courses"""
+    global sheets_manager
     if not GSHEETS_AVAILABLE or not sheets_manager or not sheets_manager.initialized:
         st.warning("Google Sheets integration is not available.")
         return
@@ -2455,6 +2457,11 @@ def main():
         page_icon="🎯",
         layout="wide"
     )
+    
+    # Initialize Google Sheets manager after set_page_config
+    global sheets_manager
+    if GSHEETS_AVAILABLE and sheets_manager is None:
+        sheets_manager = GoogleSheetsManager()
     
     # Initialize session state
     if 'selected_course_code' not in st.session_state:
