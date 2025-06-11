@@ -3,7 +3,7 @@ developmentMode = false
 
 [server]
 headless = true
-port = $PORT
+
 enableCORS = false
 
 [browser]
