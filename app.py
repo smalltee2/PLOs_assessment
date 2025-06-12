@@ -642,7 +642,7 @@ class MultiLevelAssessmentEngine:
                 'coverage': len(found_keywords) / len(keywords) if keywords else 0,
                 'confidence': round(confidence, 2),
                 'ai_insights': ai_insights,
-                'ai_enhanced': ai_analysis is not None
+                'ai_enhanced': ai_analysis is not None and ai_analysis.get('ai_generated', False)
             }
         
         return clo_results
@@ -664,8 +664,8 @@ class MultiLevelAssessmentEngine:
             'ylo_results': {},
             'alignment_matrix': {},
             'overall_scores': {},
-            'ai_enhanced': ai_analysis is not None,
-            'ai_recommendations': ai_analysis.get('recommendations', []) if ai_analysis else []
+            'ai_enhanced': ai_analysis is not None and ai_analysis.get('ai_generated', False),
+            'ai_recommendations': ai_analysis.get('recommendations', []) if ai_analysis and ai_analysis.get('ai_generated', False) else []
         }
         
         # 1. CLO Analysis with AI support
@@ -1295,7 +1295,7 @@ def create_multi_level_dashboard(results, key_prefix=""):
         st.error(f"❌ **Overall Performance: Needs Improvement** ({overall_avg:.1f}%) - Assessment ID: {results.get('assessment_id', 'N/A')}")
     
     # Enhanced AI Recommendations (if available)
-    if results.get('ai_recommendations'):
+    if results.get('ai_recommendations') and results.get('ai_enhanced'):
         st.subheader("🤖 AI Recommendations")
         for i, rec in enumerate(results['ai_recommendations'], 1):
             st.write(f"{i}. {rec}")
@@ -2157,6 +2157,9 @@ def show_multiple_file_upload_interface():
                     if use_ai:
                         content_hash = hashlib.md5(content.encode()).hexdigest()
                         ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai, selected_model)
+                        # Check if AI analysis actually succeeded
+                        if ai_analysis and not ai_analysis.get('ai_generated', False):
+                            ai_analysis = None  # Reset to None if it was mock analysis
                     
                     # Multi-level analysis
                     results = engine.calculate_multi_level_alignment(
@@ -2183,6 +2186,17 @@ def show_multiple_file_upload_interface():
                 st.session_state.aggregated_results = aggregated_results
                 
                 st.success(f"✅ Successfully analyzed {len(uploaded_files)} files!")
+                
+                # Add note about AI analysis status
+                if use_ai:
+                    # Check how many files actually used AI
+                    ai_success_count = sum(1 for f in file_assessments if f.get('ai_enhanced', False))
+                    if ai_success_count == 0:
+                        st.warning("⚠️ AI analysis failed for all files due to API quota. Using rule-based analysis instead.")
+                    elif ai_success_count < len(file_assessments):
+                        st.info(f"ℹ️ AI analysis successful for {ai_success_count}/{len(file_assessments)} files. Others used rule-based analysis.")
+                    else:
+                        st.success(f"🤖 AI analysis successful for all {len(file_assessments)} files!")
                 
                 # Show quick summary
                 st.markdown("### 📊 Quick Summary")
@@ -2405,6 +2419,9 @@ def main():
                             
                             content_hash = hashlib.md5(content.encode()).hexdigest()
                             ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai, selected_model)
+                            # Check if AI analysis actually succeeded
+                            if ai_analysis and not ai_analysis.get('ai_generated', False):
+                                ai_analysis = None  # Reset to None if it was mock analysis
                         
                         # Step 3: Multi-level analysis
                         status_text.text("🎯 Performing multi-level assessment...")
@@ -2433,7 +2450,7 @@ def main():
                         st.session_state.analysis_mode = 'single'
                         
                         # Show success message
-                        if ai_analysis:
+                        if ai_analysis is not None:
                             st.success(f"✅ File processed with AI analysis! Assessment ID: {results.get('assessment_id', 'Unknown')}")
                         else:
                             st.success(f"✅ File processed with rule-based analysis! Assessment ID: {results.get('assessment_id', 'Unknown')}")
@@ -2529,6 +2546,9 @@ def main():
                             
                             content_hash = hashlib.md5(content.encode()).hexdigest()
                             ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai, selected_model)
+                            # Check if AI analysis actually succeeded
+                            if ai_analysis and not ai_analysis.get('ai_generated', False):
+                                ai_analysis = None  # Reset to None if it was mock analysis
                         
                         # Step 3: Multi-level analysis
                         status_text.text("🎯 Performing multi-level assessment...")
@@ -2561,7 +2581,7 @@ def main():
                         
                         # Show success message with unique ID
                         assessment_id = results.get('assessment_id', 'Unknown')
-                        if ai_analysis:
+                        if ai_analysis is not None:
                             st.success(f"✅ การวิเคราะห์ด้วย AI เสร็จสมบูรณ์! Assessment ID: `{assessment_id}`")
                         else:
                             st.success(f"✅ การวิเคราะห์แบบ Rule-based เสร็จสมบูรณ์! Assessment ID: `{assessment_id}`")
