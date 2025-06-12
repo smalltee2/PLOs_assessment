@@ -2234,7 +2234,7 @@ def show_multiple_file_upload_interface():
 def main():
     st.set_page_config(
         page_title="Multi-File Assessment System",
-        page_icon="🎯",
+        page_icon="💠",
         layout="wide"
     )
     
