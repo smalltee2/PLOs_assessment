@@ -247,6 +247,17 @@ def check_ai_availability():
     except:
         return False
 
+# Configuration for OpenAI models
+OPENAI_MODELS = {
+    "gpt-3.5-turbo": "GPT-3.5 Turbo (Fast & Affordable)",
+    "gpt-4o-mini": "GPT-4o Mini (Balanced)",
+    "gpt-4o": "GPT-4o (Advanced)",
+    "gpt-4-turbo": "GPT-4 Turbo (Most Capable)",
+}
+
+# Default model - change this to your preferred model
+DEFAULT_MODEL = "gpt-3.5-turbo"
+
 def extract_text_from_file(uploaded_file):
     """Extract text from uploaded files"""
     try:
@@ -346,8 +357,7 @@ Academic writing standards ensure clear communication of results.
     return base_content
 
 @st.cache_data
-@st.cache_data
-def generate_ai_analysis(content_hash, course_code, use_ai=False):
+def generate_ai_analysis(content_hash, course_code, use_ai=False, model_name=DEFAULT_MODEL):
     """Generate AI analysis using OpenAI API or fall back to mock analysis"""
     
     if use_ai and check_ai_availability():
@@ -408,7 +418,7 @@ Return the response in this exact JSON format:
 
             # Call OpenAI API
             response = client.chat.completions.create(
-                model="gpt-4-turbo-preview",  # or "gpt-3.5-turbo" for faster/cheaper
+                model=model_name,  # Use configurable model
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -479,7 +489,12 @@ Return the response in this exact JSON format:
             
         except Exception as e:
             # Log error and fall back to mock analysis
-            st.warning(f"AI analysis failed: {str(e)}. Using mock analysis instead.")
+            error_msg = f"AI analysis failed (Model: {model_name}): {str(e)}."
+            if "model_not_found" in str(e) or "does not exist" in str(e):
+                error_msg += f"\n\nAvailable models: {', '.join(OPENAI_MODELS.keys())}"
+                error_msg += f"\n\nPlease try using 'gpt-3.5-turbo' or check your API access."
+            error_msg += "\n\nUsing mock analysis instead."
+            st.warning(error_msg)
             # Continue to mock analysis below
     
     # Mock analysis implementation (existing code)
@@ -2057,16 +2072,30 @@ def show_multiple_file_upload_interface():
     )
     
     # AI Analysis option
-    col1, col2 = st.columns([3, 1])
+    col1, col2, col3 = st.columns([2, 2, 1])
     
     with col1:
         use_ai = st.checkbox(
             "🤖 Enable AI Analysis",
             value=False,
-            help="Use AI to enhance content analysis (requires API key)"
+            help="Use AI to enhance content analysis (requires API key)",
+            key="multi_ai_checkbox"
         )
     
     with col2:
+        if use_ai:
+            selected_model = st.selectbox(
+                "AI Model:",
+                options=list(OPENAI_MODELS.keys()),
+                format_func=lambda x: OPENAI_MODELS[x],
+                index=0,
+                help="Select the OpenAI model to use",
+                key="multi_model_selector"
+            )
+        else:
+            selected_model = DEFAULT_MODEL
+    
+    with col3:
         ai_available = check_ai_availability()
         if ai_available:
             st.success("AI Ready")
@@ -2127,7 +2156,7 @@ def show_multiple_file_upload_interface():
                     ai_analysis = None
                     if use_ai:
                         content_hash = hashlib.md5(content.encode()).hexdigest()
-                        ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai)
+                        ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai, selected_model)
                     
                     # Multi-level analysis
                     results = engine.calculate_multi_level_alignment(
@@ -2316,7 +2345,7 @@ def main():
             )
             
             # AI Analysis option
-            col1, col2 = st.columns([3, 1])
+            col1, col2, col3 = st.columns([2, 2, 1])
             with col1:
                 use_ai = st.checkbox(
                     "🤖 Enable AI Analysis",
@@ -2324,6 +2353,17 @@ def main():
                     help="Use AI to enhance content analysis"
                 )
             with col2:
+                if use_ai:
+                    selected_model = st.selectbox(
+                        "AI Model:",
+                        options=list(OPENAI_MODELS.keys()),
+                        format_func=lambda x: OPENAI_MODELS[x],
+                        index=0,
+                        help="Select the OpenAI model to use"
+                    )
+                else:
+                    selected_model = DEFAULT_MODEL
+            with col3:
                 ai_available = check_ai_availability()
                 if ai_available:
                     st.success("AI Ready")
@@ -2364,7 +2404,7 @@ def main():
                             time.sleep(1)
                             
                             content_hash = hashlib.md5(content.encode()).hexdigest()
-                            ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai)
+                            ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai, selected_model)
                         
                         # Step 3: Multi-level analysis
                         status_text.text("🎯 Performing multi-level assessment...")
@@ -2439,18 +2479,31 @@ def main():
             )
             
             # AI Analysis option for text input
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns([2, 2, 1])
             with col1:
                 use_ai = st.checkbox(
                     "🤖 เปิดใช้การวิเคราะห์ด้วย AI",
                     value=False,
-                    help="ใช้ AI เพื่อเพิ่มประสิทธิภาพการวิเคราะห์เนื้อหา"
+                    help="ใช้ AI เพื่อเพิ่มประสิทธิภาพการวิเคราะห์เนื้อหา",
+                    key="text_ai_checkbox"
                 )
             with col2:
+                if use_ai:
+                    selected_model = st.selectbox(
+                        "AI Model:",
+                        options=list(OPENAI_MODELS.keys()),
+                        format_func=lambda x: OPENAI_MODELS[x],
+                        index=0,
+                        help="Select the OpenAI model to use",
+                        key="text_model_selector"
+                    )
+                else:
+                    selected_model = DEFAULT_MODEL
+            with col3:
                 # Show content hash preview
                 if content.strip():
                     content_hash = hashlib.md5(content.encode()).hexdigest()
-                    st.info(f"🔒 Content Hash: `{content_hash[:8]}...`")
+                    st.info(f"🔒 Hash: `{content_hash[:8]}...`")
             
             st.markdown('</div>', unsafe_allow_html=True)
             
@@ -2475,7 +2528,7 @@ def main():
                             time.sleep(0.5)
                             
                             content_hash = hashlib.md5(content.encode()).hexdigest()
-                            ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai)
+                            ai_analysis = generate_ai_analysis(content_hash, st.session_state.selected_course_code, use_ai, selected_model)
                         
                         # Step 3: Multi-level analysis
                         status_text.text("🎯 Performing multi-level assessment...")
@@ -2681,7 +2734,7 @@ def main():
         with col1:
             st.markdown("**🔧 เวอร์ชัน**")
             st.write("• v2.0 Multi-File")
-            st.write("• No Google Sheets")
+            st.write("• Fixed OpenAI Model")
         
         with col2:
             st.markdown("**📊 คุณสมบัติ**")
