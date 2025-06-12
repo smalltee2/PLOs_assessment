@@ -2272,6 +2272,7 @@ def main():
     
     <div class="main-header">
         <h1> Multi-Learning Output Assessment System</h1>
+        <h1> หลักสูตรวิทยาศาสตรมหาบัณฑิต สาขาวิชาเทคโนโลยีการจัดการสิ่งแวดล้อมและการเปลี่ยนแปลงสภาพภูมิอากาศ</h1>
         <p style="font-size: 1.1em;">ระบบประเมินผลการเรียนรู้แบบหลายระดับ CLO → YLO → PLO</p>
 
     </div>
