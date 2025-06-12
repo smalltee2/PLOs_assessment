@@ -2271,7 +2271,7 @@ def main():
     </style>
     
     <div class="main-header">
-        <h1> Multi-File Assessment System</h1>
+        <h1> Multi-Learning Output Assessment System</h1>
         <p style="font-size: 1.1em;">ระบบประเมินผลการเรียนรู้แบบหลายระดับ CLO → PLO → YLO</p>
 
     </div>
