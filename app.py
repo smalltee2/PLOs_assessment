@@ -346,13 +346,143 @@ Academic writing standards ensure clear communication of results.
     return base_content
 
 @st.cache_data
+@st.cache_data
 def generate_ai_analysis(content_hash, course_code, use_ai=False):
-    """Generate deterministic AI analysis (mock or real)"""
-    if use_ai and check_ai_availability():
-        # Real AI analysis would go here
-        # For now, we'll use deterministic mock analysis
-        pass
+    """Generate AI analysis using OpenAI API or fall back to mock analysis"""
     
+    if use_ai and check_ai_availability():
+        try:
+            from openai import OpenAI
+            
+            # Initialize OpenAI client
+            client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+            
+            # Get course information
+            course_info = COURSE_DESCRIPTIONS.get(course_code, {})
+            course_name = course_info.get('name', 'Unknown Course')
+            course_clos = course_info.get('clo', {})
+            course_keywords = course_info.get('keywords', {})
+            
+            # Prepare CLO information for the prompt
+            clo_details = []
+            for clo_code, clo_desc in course_clos.items():
+                keywords = course_keywords.get(clo_code, [])
+                clo_details.append(f"{clo_code}: {clo_desc}\nKeywords: {', '.join(keywords)}")
+            
+            # Create the analysis prompt
+            system_prompt = """You are an expert educational assessment AI specializing in analyzing course content alignment with learning outcomes. 
+            You provide detailed, accurate assessments of how well content matches Course Learning Outcomes (CLOs).
+            Respond in JSON format with scores, confidence levels, and insights."""
+            
+            user_prompt = f"""Analyze the following content for alignment with Course Learning Outcomes (CLOs).
+
+Course: {course_code} - {course_name}
+
+Course Learning Outcomes:
+{chr(10).join(clo_details)}
+
+Content to analyze:
+{content_hash[:1000]}  # Using first 1000 chars as sample
+
+For each CLO, provide:
+1. A score from 0-100 indicating alignment percentage
+2. A confidence level from 0-1 indicating your certainty
+3. List of keywords found from the CLO's keyword list
+4. 2-3 specific insights about the alignment
+
+Also provide 3-5 overall recommendations for improvement in Thai language.
+
+Return the response in this exact JSON format:
+{{
+    "clo_analysis": {{
+        "CLO1": {{
+            "score": 85,
+            "confidence": 0.92,
+            "found_keywords": ["keyword1", "keyword2"],
+            "insights": ["insight1", "insight2", "insight3"]
+        }},
+        // ... other CLOs
+    }},
+    "recommendations": ["recommendation1", "recommendation2", "recommendation3"]
+}}"""
+
+            # Call OpenAI API
+            response = client.chat.completions.create(
+                model="gpt-4-turbo-preview",  # or "gpt-3.5-turbo" for faster/cheaper
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.3,  # Lower temperature for more consistent analysis
+                response_format={"type": "json_object"}  # Ensure JSON response
+            )
+            
+            # Parse the response
+            import json
+            ai_response = json.loads(response.choices[0].message.content)
+            
+            # Format results to match expected structure
+            ai_results = {
+                'ai_generated': True,
+                'analysis_id': content_hash[:8],
+                'content_analysis': {},
+                'recommendations': ai_response.get('recommendations', []),
+                'confidence_scores': {},
+                'model_used': response.model,
+                'usage': {
+                    'prompt_tokens': response.usage.prompt_tokens,
+                    'completion_tokens': response.usage.completion_tokens,
+                    'total_tokens': response.usage.total_tokens
+                }
+            }
+            
+            # Process CLO analysis
+            clo_analysis = ai_response.get('clo_analysis', {})
+            for clo_code in course_clos.keys():
+                if clo_code in clo_analysis:
+                    clo_data = clo_analysis[clo_code]
+                    ai_results['content_analysis'][clo_code] = {
+                        'score': clo_data.get('score', 70),
+                        'confidence': clo_data.get('confidence', 0.8),
+                        'found_keywords': clo_data.get('found_keywords', []),
+                        'ai_insights': clo_data.get('insights', [
+                            f"AI analysis completed for {clo_code}",
+                            f"Confidence level: {clo_data.get('confidence', 0.8)*100:.0f}%",
+                            f"Alignment score: {clo_data.get('score', 70)}%"
+                        ])
+                    }
+                else:
+                    # Fallback if CLO not in response
+                    ai_results['content_analysis'][clo_code] = {
+                        'score': 70,
+                        'confidence': 0.75,
+                        'found_keywords': [],
+                        'ai_insights': [
+                            f"Limited alignment detected for {clo_code}",
+                            "Consider adding more relevant content",
+                            "Review CLO requirements"
+                        ]
+                    }
+            
+            # Add Thai recommendations if not provided
+            if not ai_results['recommendations']:
+                ai_results['recommendations'] = [
+                    "เพิ่มเนื้อหาให้สอดคล้องกับ CLO ที่มีคะแนนต่ำ",
+                    "ปรับปรุงการใช้คำสำคัญให้ชัดเจนขึ้น",
+                    "เสริมตัวอย่างและกรณีศึกษาที่เกี่ยวข้อง"
+                ]
+            
+            # Log API usage for monitoring
+            st.sidebar.info(f"🤖 AI Tokens Used: {ai_results['usage']['total_tokens']}")
+            
+            return ai_results
+            
+        except Exception as e:
+            # Log error and fall back to mock analysis
+            st.warning(f"AI analysis failed: {str(e)}. Using mock analysis instead.")
+            # Continue to mock analysis below
+    
+    # Mock analysis implementation (existing code)
     # Create deterministic seed from content and course
     deterministic_seed = hash(f"{content_hash}_{course_code}") % (2**32)
     random.seed(deterministic_seed)
@@ -361,42 +491,42 @@ def generate_ai_analysis(content_hash, course_code, use_ai=False):
     course_clos = course_info.get('clo', {})
     
     ai_results = {
-        'ai_generated': True,
-        'analysis_id': content_hash[:8],  # Use content hash instead of timestamp
+        'ai_generated': False,  # False for mock
+        'analysis_id': content_hash[:8],
         'content_analysis': {},
         'recommendations': [],
         'confidence_scores': {}
     }
     
     # Deterministic analysis for each CLO
-    clo_list = sorted(course_clos.items())  # Sort for consistency
+    clo_list = sorted(course_clos.items())
     for i, (clo_code, clo_desc) in enumerate(clo_list):
         keywords = course_info.get('keywords', {}).get(clo_code, [])
         
         # Deterministic keyword selection based on content
         content_words = content_hash.lower()
         found_keywords = []
-        for keyword in keywords[:4]:  # Take first 4 for consistency
+        for keyword in keywords[:4]:
             if any(char in content_words for char in keyword.lower()[:3]):
                 found_keywords.append(keyword)
         
         # Deterministic scoring based on content characteristics
-        content_score = len(content_hash) % 30 + 65  # Range 65-94
-        clo_adjustment = (ord(clo_code[-1]) % 15) - 7  # -7 to +7 adjustment
+        content_score = len(content_hash) % 30 + 65
+        clo_adjustment = (ord(clo_code[-1]) % 15) - 7
         base_score = max(60, min(95, content_score + clo_adjustment))
         
-        # Enhanced AI confidence - can reach 95%+ easily
-        base_confidence = 0.90  # เริ่มต้นที่ 90%
-        keyword_bonus = len(found_keywords) * 0.025  # Up to +10% for 4 keywords
-        content_length_bonus = min(0.04, len(content_hash) / 800)  # Up to +4% for content
-        score_bonus = max(0, (base_score - 70) * 0.002)  # Up to +5% for high scores
-        course_match_bonus = 0.015 if course_code in content_hash else 0  # +1.5% if course mentioned
+        # Enhanced AI confidence
+        base_confidence = 0.90
+        keyword_bonus = len(found_keywords) * 0.025
+        content_length_bonus = min(0.04, len(content_hash) / 800)
+        score_bonus = max(0, (base_score - 70) * 0.002)
+        course_match_bonus = 0.015 if course_code in content_hash else 0
         
         confidence = min(0.995, base_confidence + keyword_bonus + content_length_bonus + score_bonus + course_match_bonus)
         
         ai_results['content_analysis'][clo_code] = {
             'score': base_score,
-            'confidence': round(confidence, 3),  # 3 decimal places for precision
+            'confidence': round(confidence, 3),
             'found_keywords': found_keywords,
             'ai_insights': [
                 f"การวิเคราะห์ {clo_code} ด้วยความมั่นใจสูง",
@@ -405,23 +535,16 @@ def generate_ai_analysis(content_hash, course_code, use_ai=False):
             ]
         }
     
-    # Deterministic recommendations in Thai based on scores
+    # Deterministic recommendations in Thai
     all_recommendations = [
         "เพิ่มตัวอย่างการปฏิบัติและกรณีศึกษาที่เป็นรูปธรรม",
-        "ปรับปรุงการนำเสนอด้วยแผนภูมิและภาพประกอบ", 
+        "ปรับปรุงการนำเสนอด้วยแผนภูมิและภาพประกอบ",
         "เสริมเนื้อหาเรื่องการมีส่วนร่วมของชุมชน",
         "เสริมสร้างความเชื่อมโยงระหว่างทฤษฎีและการปฏิบัติ",
         "เพิ่มการอ้างอิงงานวิจัยและการพัฒนาล่าสุด",
-        "ปรับปรุงการใช้คำสำคัญให้สอดคล้องกับวัตถุประสงค์รายวิชา",
-        "ขยายการอภิปรายเรื่องระเบียบวิธีวิจัย",
-        "เพิ่มรายละเอียดทางเทคนิคในส่วนที่เหมาะสม",
-        "พัฒนากิจกรรมการเรียนรู้แบบมีส่วนร่วม",
-        "เชื่อมโยงกับบริบทสิ่งแวดล้อมไทยและอาเซียน",
-        "เสริมการประยุกต์ใช้เทคโนโลยีสมัยใหม่",
-        "เพิ่มการประเมินผลแบบหลากหลาย"
+        "ปรับปรุงการใช้คำสำคัญให้สอดคล้องกับวัตถุประสงค์รายวิชา"
     ]
     
-    # Select recommendations based on content hash
     rec_indices = [int(content_hash[i*2:i*2+2], 16) % len(all_recommendations) for i in range(3)]
     ai_results['recommendations'] = [all_recommendations[i] for i in rec_indices]
     
